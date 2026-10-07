@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% from 'icons.html' import icon %}
+{% block content %}
+<div class="page-heading"><div class="title-row"><span class="page-task-icon">{{ icon(module.slug) }}</span><h1>{{ module.title }}</h1></div></div>
+<section class="processing-block"><div class="overview-heading"><h2>Обзор</h2><span class="badge unconnected">Не подключена</span></div><dl class="processing-dates"><div><dt>Проверка</dt><dd>—</dd></div><div><dt>Последняя обработка</dt><dd>Не запускалась</dd></div><div><dt>Следующий запуск</dt><dd>Не назначен</dd></div></dl>{% with launch_kind='planned' %}{% include 'processing_management.html' %}{% endwith %}</section>
+{% include 'parameters.html' %}
+<section id="reports" class="report-panel" aria-labelledby="reports-heading" tabindex="-1"><div class="block-heading"><h2 id="reports-heading">{{ icon('report', 'section-icon') }}Результаты и отчёты</h2></div><div class="panel-navigation"><nav class="tabs" aria-label="Результаты и отчёты"><a class="{{ 'active' if active == 'problems' }}" href="{{ url_for('processor', slug=module.slug, view='problems') }}#reports">Проблемы и оповещения</a><a class="{{ 'active' if active == 'logs' }}" href="{{ url_for('processor', slug=module.slug, view='logs') }}#reports">{{ icon('history') }}Лог</a></nav></div>{% if active == 'logs' %}{% include 'history.html' %}{% else %}<div class="empty-message">Данные появятся после подключения</div>{% endif %}</section>
+{% endblock %}

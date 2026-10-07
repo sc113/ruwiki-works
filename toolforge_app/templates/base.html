@@ -1,0 +1,59 @@
+{% from 'icons.html' import icon %}
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ module.short_title }}{% endblock %} · ruwiki works</title>
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Перейти к отчёту</a>
+  <aside class="sidebar">
+    <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">rw</span><span>ruwiki<br>works</span></a>
+    <a class="processor-link overview-nav {% if module.slug == 'overview' %}selected{% endif %}" href="{{ url_for('index') }}" {% if module.slug == 'overview' %}aria-current="page"{% endif %}>{{ icon('overview', 'nav-symbol') }}<span>Все задачи бота</span></a>
+    <div class="nav-label">РАЗДЕЛЫ</div>
+    <nav aria-label="Разделы" class="processor-nav">
+      {% for p in processors %}
+      <a href="{{ url_for('processor', slug=p.slug) }}" class="processor-link {% if p.slug == module.slug %}selected{% endif %}" {% if p.slug == module.slug %}aria-current="page"{% endif %}>
+        {{ icon(p.slug, 'nav-symbol') }}
+        <span>{{ p.title }}</span>
+      </a>
+      {% endfor %}
+    </nav>
+    <label class="compact-nav"><span class="sr-only">Перейти в раздел</span><select data-section-nav aria-label="Текущий раздел">
+      <option value="{{ url_for('index') }}" {% if module.slug == 'overview' and request.endpoint != 'notifications_page' %}selected{% endif %}>Все задачи бота</option>
+      {% for p in processors %}<option value="{{ url_for('processor', slug=p.slug) }}" {% if p.slug == module.slug %}selected{% endif %}>{{ p.title }}</option>{% endfor %}
+      <option value="{{ url_for('work_console') }}" {% if module.slug == 'activity' %}selected{% endif %}>Запуски и консоль</option>
+      {% if is_admin %}<option value="{{ url_for('notifications_page') }}" {% if request.endpoint == 'notifications_page' %}selected{% endif %}>Уведомления</option>{% endif %}
+    </select></label>
+  </aside>
+  <div class="workspace">
+    <header class="topbar">
+      <div class="breadcrumb">Разделы <span>/</span> <strong>{{ module.short_title }}</strong></div>
+      <div class="account">
+      <a class="console-link {% if module.slug == 'activity' %}current{% endif %}" href="{{ url_for('work_console') }}" {% if module.slug == 'activity' %}aria-current="page"{% endif %}>{{ icon('console') }}Запуски и консоль</a>
+      {% if preview_admin %}
+        <span class="avatar">{{ username[0] }}</span><span title="Предпросмотр admin">{{ username }}<small>Только просмотр</small></span>
+        <form action="{{ url_for('change_preview') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="mode" value="public"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="text-button preview-switch" type="submit">Публичный вид</button></form>
+      {% elif username %}
+        <span class="avatar">{{ username[0] }}</span><span>{{ username }}{% if is_admin %}<small>Администратор</small>{% endif %}</span>
+        <form action="{{ url_for('logout') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="text-button" type="submit">Выйти</button></form>
+      {% else %}
+        {% if preview_enabled %}<form action="{{ url_for('change_preview') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="mode" value="admin"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="text-button preview-switch" type="submit">{{ icon('user') }} Режим admin</button></form>{% endif %}
+        <a class="login-link" href="{{ url_for('login') }}" title="Вход через учётную запись Википедии">{{ icon('user') }} Войти</a>
+      {% endif %}
+      </div>
+    </header>
+    <main id="main">
+      <div id="system-health" data-refresh-url="{{ url_for('system_fragment') }}">{% include 'system_status.html' %}</div>
+      {% for message in get_flashed_messages() %}<div class="notice" role="status">{{ message }}</div>{% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="footer"><span>ruwiki works</span><a href="https://wikitech.wikimedia.org/wiki/Portal:Toolforge" target="_blank" rel="noopener">Toolforge ↗</a></footer>
+  </div>
+</body>
+</html>

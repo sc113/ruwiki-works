@@ -1,0 +1,18 @@
+{% macro next_run(card) -%}
+  {% if not card.enabled %}<span class="muted-value">Не назначен</span>
+  {% elif card.control.mode == 'stopped' %}<span class="muted-value">Отключён</span>
+  {% elif card.control.mode == 'paused' %}<span class="muted-value">На паузе</span>
+  {% elif card.next_job or card.next_scheduled %}
+    {% set due = card.next_job.due_at if card.next_job else card.next_scheduled %}
+    {% if card.next_scheduled and card.next_scheduled < due %}{% set due = card.next_scheduled %}{% endif %}
+    <span class="date-value" {% if card.processor.slug == 'obkat' and due == card.next_scheduled %}title="Форматирование месяца"{% endif %}>{{ due|localtime }}</span><span class="countdown" data-countdown="{{ due }}" data-server-now="{{ now }}">{{ due|countdown }}</span>
+  {% else %}<span>После правки</span>{% endif %}
+{%- endmacro %}
+
+{% macro timeline(card, check_label='Проверка категорий') -%}
+<dl class="processing-dates">
+  <div><dt>{{ check_label }}</dt><dd>{{ card.last_search|localtime }}{% if card.task.slug in system_health.stale %}<span class="stale-data">Данные устарели</span>{% endif %}</dd></div>
+  <div><dt>Последняя обработка</dt><dd>{% if card.last_run %}<a href="{{ url_for('run_detail', run_id=card.last_run.id) }}">{{ (card.last_run.finished_at or card.last_run.started_at)|localtime }}</a>{% else %}<span class="muted-value">Не запускалась</span>{% endif %}</dd></div>
+  <div><dt>Следующий запуск</dt><dd>{{ next_run(card) }}</dd></div>
+</dl>
+{%- endmacro %}

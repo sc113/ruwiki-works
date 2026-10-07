@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% from 'icons.html' import icon %}
+{% block title %}Уведомления{% endblock %}
+{% block content %}
+<div class="page-heading"><div class="title-row"><span class="page-task-icon">{{ icon('bell') }}</span><h1>Уведомления</h1></div></div>
+<section class="incident-list" aria-label="Сбои и их устранение">
+{% for entry in entries %}
+  <article class="incident {{ 'unread' if not entry.read_at }} {{ 'resolved' if entry.resolved_at }}">
+    <div class="incident-content"><div class="incident-heading"><h2><a href="{{ entry.target }}">{{ entry.title }}</a></h2><span class="badge {{ 'success' if entry.resolved_at else 'error' }}">{{ 'Устранено' if entry.resolved_at else 'Требует внимания' }}</span></div><p>{{ entry.message }}</p><div class="incident-dates"><span>Обнаружено {{ entry.opened_at|localtime }}</span>{% if entry.resolved_at %}<span>Устранено {{ entry.resolved_at|localtime }}</span>{% endif %}</div></div>
+    {% if not entry.read_at %}<form class="notification-form" method="post" action="{{ url_for('notification_read', notification_id=entry.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="button secondary" type="submit">Прочитано</button></form>{% endif %}
+  </article>
+{% else %}<div class="empty-message">Уведомлений пока нет</div>{% endfor %}
+</section>
+{% if has_next or page > 1 %}<div class="pagination">{% if page > 1 %}<a href="{{ url_for('notifications_page', page=page-1) }}">← Назад</a>{% endif %}<span>{{ page }}</span>{% if has_next %}<a href="{{ url_for('notifications_page', page=page+1) }}">Далее →</a>{% endif %}</div>{% endif %}
+{% endblock %}

@@ -1,0 +1,40 @@
+{% from 'icons.html' import icon %}
+<details id="settings" class="parameters-panel"><summary>{{ icon('settings') }}<span>Параметры</span>{{ icon('chevron') }}</summary>
+  <div class="parameters-content">
+  {% if module.slug in ['maintenance', 'translations', 'sections'] and is_admin %}
+    {% if module.slug == 'sections' %}<p class="settings-note">Проверены и сохранены в пропуски: <strong>{{ report.remembered }}</strong>. Параметры шаблонов и даты сохраняются при замене имени.</p>{% endif %}<div class="parameters-help"><details class="help-disclosure"><summary aria-label="О настройках">?</summary><div class="help-content"><p>Настройки независимы для каждого действия и применяются со следующего запуска. Выключенное автосохранение включает проверку без правок.</p>{% if module.slug == 'maintenance' and task.slug != 'maintenance-rq-unwrap' %}<p>Лимит ревизий 0 — без ограничения. Ручное изменение списка шаблонов разделов отключает его автоматическое обновление.</p>{% endif %}</div></details></div>
+    <form action="{{ url_for('task_settings', slug=task.slug) }}" method="post" class="settings-form"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <div class="settings-sections">{% for group in config_fields|rejectattr('key', 'equalto', 'run_time')|groupby('group') %}<section class="settings-group" aria-labelledby="config-group-{{ loop.index }}"><h3 class="settings-group-title" id="config-group-{{ loop.index }}">{{ group.grouper }}</h3><div class="settings-grid">{% for field in group.list %}<label class="setting-field {{ 'wide' if field.kind in ['text', 'search', 'time'] or group.grouper == 'Отладка' }} {{ 'checkbox-field' if field.kind == 'bool' }}"><span>{{ field.label }}</span>{% if field.kind == 'bool' %}<input type="checkbox" name="{{ field.key }}" {% if field.value %}checked{% endif %}>{% elif field.kind == 'search' %}<select name="{{ field.key }}"><option value="1" {% if field.value == 1 %}selected{% endif %}>1 · Последняя непрерывная установка</option><option value="2" {% if field.value == 2 %}selected{% endif %}>2 · Первое появление</option><option value="3" {% if field.value == 3 %}selected{% endif %}>3 · Двоичный поиск с проверкой ранних версий</option></select>{% elif field.kind in ['list', 'mapping'] %}<textarea name="{{ field.key }}" rows="{{ 8 if field.kind == 'mapping' else 5 }}" spellcheck="false">{{ field.value }}</textarea>{% else %}<input type="{{ field.kind }}" name="{{ field.key }}" value="{{ field.value }}" {% if field.kind == 'number' %}min="0" max="1000000"{% endif %}>{% endif %}</label>{% endfor %}</div></section>{% endfor %}</div>
+    <div class="settings-save"><button class="button primary" type="submit">Сохранить настройки</button>{% if config.section_templates_auto %}<button class="button secondary" type="submit" form="section-refresh-form">{{ icon('restart') }}Обновить список шаблонов из категории</button>{% endif %}{% if config_updated %}<span>{{ config_updated.by }} · {{ config_updated.at|localtime }}</span>{% endif %}</div></form>
+    {% if module.slug == 'sections' %}{% include 'section_readouts.html' %}{% endif %}
+    {% if config.section_templates_auto %}<form id="section-refresh-form" action="{{ url_for('task_refresh', slug=task.slug) }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="mode" value="sections"></form>{% endif %}
+  {% else %}
+    <dl class="public-parameters">
+      {% if module.slug in ['maintenance', 'translations', 'sections'] %}
+      <div><dt>{{ 'Поиск статей' if module.slug == 'sections' else 'Проверка категорий' }}</dt><dd>{{ task_state.schedule.search_minutes|search_frequency }}</dd></div>
+      <div class="wide"><dt>Источник</dt><dd>
+        {% if module.slug == 'sections' %}
+          {% set main_source = report.sources|first if report.sources else report.source %}
+          <div class="template-source-tree">
+            <a class="parameter-source" href="{{ wiki_url(main_source) }}" target="_blank" rel="noopener">{{ main_source }}</a>
+            {% if report.sources|length > 1 %}
+            <ul class="template-redirects" aria-label="Перенаправления шаблона {{ main_source }}">
+              {% for source in report.sources if source != main_source %}
+              <li>{{ icon('redirect') }}<a href="{{ wiki_url(source) }}" target="_blank" rel="noopener">{{ source }}</a></li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+          </div>
+        {% else %}
+          {% for source in report.sources if report.sources %}<a class="parameter-source" href="{{ wiki_url(source) }}" target="_blank" rel="noopener">{{ source }}</a>{% else %}<a href="{{ wiki_url(report.source) }}" target="_blank" rel="noopener">{{ report.source }}</a>{% endfor %}
+        {% endif %}
+      </dd></div>
+      {% elif module.slug == 'obkat' %}
+      <div><dt>Проверка правок</dt><dd>Каждые {{ settings.poll_seconds }} секунд</dd></div>
+      {% else %}
+      <div><dt>Параметры</dt><dd>Появятся после подключения</dd></div>
+      {% endif %}
+    </dl>
+  {% endif %}
+  </div>
+</details>

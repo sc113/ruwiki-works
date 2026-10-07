@@ -1,0 +1,18 @@
+# Replace TOOL_NAME before loading; verify image availability with jobs images.
+# Only one executor: processor actions run sequentially in website order.
+- name: ruwiki-executor
+  image: python3.13
+  command: bash /data/project/TOOL_NAME/www/python/src/deploy/worker.sh all
+  continuous: true
+  health-check-script: bash /data/project/TOOL_NAME/www/python/src/deploy/health-check.sh executor
+  mount: all
+  mem: 512Mi
+  emails: onfailure
+- name: ruwiki-monitor
+  image: python3.13
+  command: bash /data/project/TOOL_NAME/www/python/src/deploy/worker.sh monitor
+  continuous: true
+  health-check-script: bash /data/project/TOOL_NAME/www/python/src/deploy/health-check.sh monitor
+  mount: all
+  mem: 256Mi
+  emails: onfailure

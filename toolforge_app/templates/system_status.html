@@ -1,0 +1,9 @@
+{% from 'icons.html' import icon %}
+<div class="system-status">
+  <span class="system-state {{ system_health.status }}">{{ icon('status') }}<strong>{{ system_health.label }}</strong></span>
+  {% if system_health.running %}<span class="system-current">{{ system_health.running|join(', ') }}</span>{% endif %}
+  {% if is_admin %}
+    <details class="system-details"><summary>Процессы {{ icon('chevron') }}</summary><dl>{% for key, component in system_health.components.items() %}<div><dt>{{ component.name }}</dt><dd><span class="{{ 'muted-value' if component.online else 'health-warning' }}">{{ 'На связи' if component.online else 'Нет связи' }}</span> · {{ component.at|localtime }}</dd></div>{% endfor %}</dl></details>
+    <a class="notifications-link" href="{{ url_for('notifications_page') }}">{{ icon('bell') }}<span>Уведомления</span>{% if system_health.unread %}<strong aria-label="Непрочитано: {{ system_health.unread }}">{{ system_health.unread }}</strong>{% endif %}</a>
+  {% endif %}
+</div>

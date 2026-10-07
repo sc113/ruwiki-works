@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% from 'icons.html' import icon %}
+{% block title %}Запуски и консоль{% endblock %}
+{% block content %}
+<div class="page-heading"><div class="title-row"><span class="page-task-icon">{{ icon('console') }}</span><h1>Запуски и консоль</h1><details class="help-disclosure page-help"><summary aria-label="Как читать результаты запусков">?</summary><div class="help-content"><p>Время указано по Москве. Проверено, изменено и пропущено — результаты этого запуска. Ранее проверенные статьи показываются отдельно.</p><p>Проблемы — остаток в отчёте после обработки. «+ новых» и «− устранено» сравнивают состав отчёта до и после запуска. Для старых журналов сравнение может отсутствовать.</p><p>Проверка подготавливает изменения без сохранения в Википедии. Локальные снимки в историю запусков не входят.</p><p>Публичная консоль показывает начало, завершение и сохранённые изменения. admin видит полный журнал и подробности каждого события.</p><p>В консоли — до 200 последних событий. Весь журнал каждого запуска открывается из таблицы истории.</p></div></details></div><a class="button secondary" href="{{ url_for('index') }}">Все задачи</a></div>
+<form class="activity-filters" method="get" action="{{ url_for('work_console') }}">
+  <label>Задача<select name="task" id="console-task" aria-label="Задача в истории и консоли"><option value="">Все задачи</option>{% for task in console.tasks %}<option value="{{ task.slug }}" {% if selected == task.slug %}selected{% endif %}>{{ task.title }}</option>{% endfor %}</select></label>
+  <label>Дата · МСК<input type="date" name="day" value="{{ day }}" aria-label="Дата запусков по Москве"></label>
+  <label>Состояние<select name="status" aria-label="Состояние запусков"><option value="">Все состояния</option>{% for key, label in status_labels.items() %}<option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+  <button class="button secondary" type="submit">Показать</button>{% if selected or day or status %}<a class="reset-activity" href="{{ url_for('work_console') }}">Сбросить</a>{% endif %}
+</form>
+<div class="console-toolbar"><label class="follow-toggle"><input type="checkbox" id="console-follow" {% if live %}checked{% endif %}>Обновлять автоматически</label><button type="button" class="button secondary" id="console-refresh">{{ icon('restart') }}Обновить</button></div>
+<div id="work-console" data-feed-url="{{ url_for('console_fragment', task=selected, day=day, status=status, page=page) }}">{% include 'console_feed.html' %}</div>
+{% endblock %}

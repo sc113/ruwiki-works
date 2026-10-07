@@ -1,0 +1,9 @@
+{% from 'icons.html' import icon %}
+{% from 'ui.html' import timeline with context %}
+<section class="processing-block" aria-labelledby="processing-heading">
+  <div class="overview-heading"><h2 id="processing-heading">Обзор</h2><span class="badge {{ task_state.status }}">{{ task_state.status_label }}</span>{% if task_state.dry_run %}<span class="mode-label">Режим проверки</span>{% endif %}</div>
+  {{ timeline(task_state, 'Поиск правок') }}
+  {% include 'run_progress.html' %}
+  {% with launch_kind='obkat' %}{% include 'processing_management.html' %}{% endwith %}
+  {% if queue %}<ul id="queue" class="queue-list">{% for job in queue %}<li><span>{% if job.title %}<a href="{{ wiki_url(job.title) }}" target="_blank" rel="noopener">{{ job.title.replace('Википедия:Обсуждение категорий/', '') }}</a>{% else %}{{ kind_labels.get(job.kind, job.kind) }}{% endif %}</span><time>{{ job.due_at|localtime }}</time><span class="countdown" data-countdown="{{ job.due_at }}" data-server-now="{{ now }}">{{ job.due_at|countdown }}</span></li>{% endfor %}</ul>{% else %}<span id="queue"></span>{% endif %}
+</section>

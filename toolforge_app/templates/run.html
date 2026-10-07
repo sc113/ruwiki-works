@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% from 'icons.html' import icon %}
+{% block title %}Журнал обработки{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('processor', slug=module.slug, task=task.slug if task else module.slug, view='logs') }}#history">← История запусков</a>
+<a class="all-runs-back" href="{{ url_for('work_console') }}">Все запуски</a>
+{% if not is_admin %}
+<div class="page-heading"><h1>{{ run.started_at|localtime }}</h1><a class="button secondary" href="{{ url_for('export_text_log', run_id=run.id) }}">{{ icon('download') }}Скачать лог</a></div>
+<div class="run-meta"><strong>{{ task.title if task else module.title }}</strong><span class="badge {{ run.status }}">{{ status_labels.get(run.status, run.status) }}</span><span>Длительность: {{ run|duration }}</span>{% if run.dry_run %}<span class="muted-value">Режим проверки</span>{% endif %}</div>
+{% include 'run_metrics.html' %}
+<pre class="plain-log">{{ log_text }}</pre>
+{% else %}
+<div class="page-heading"><div><div class="eyebrow">{{ task.title if task else module.short_title }} · ЖУРНАЛ ОБРАБОТКИ</div><h1>{{ run.started_at|localtime }}</h1><p>{{ kind_labels.get(run.kind, run.kind) }} · {{ run.requested_by }} · {{ 'С форматированием' if run.spacing else 'Стандартный режим' }}</p></div><a class="button secondary" href="{{ url_for('export_log', run_id=run.id) }}">{{ icon('download') }}Полный журнал · JSON</a></div>
+<div class="run-meta"><span class="badge {{ run.status }}">{{ status_labels.get(run.status, run.status) }}</span>{% if run.dry_run %}<span class="badge neutral">Режим проверки</span>{% endif %}<span>Завершение: {{ run.finished_at|localtime('%H:%M:%S') }}</span><span>Страниц: {{ run.summary.get('checked', '—') }}</span><span>Изменено: {{ run.summary.get('changed', 0) }}</span></div>
+<div class="run-result-summary"><span>Длительность: {{ run|duration }}</span>{% include 'run_metrics.html' %}</div>
+{% if run.status == 'running' %}<div class="notice">Обработка продолжается. Обновите страницу, чтобы увидеть новые записи.</div>{% elif run.status == 'interrupted' %}<div class="notice">Обработчик остановился до завершения. Задание осталось в очереди и будет выполнено повторно.</div>{% endif %}
+{% if run.status == 'paused' %}<div class="notice">Обработка приостановлена администратором. Очередь сохранена до продолжения.</div>{% elif run.status == 'stopped' %}<div class="notice">Обработка остановлена администратором. Ожидающие задания отменены.</div>{% endif %}
+<section class="report-panel"><div class="panel-intro"><h2>Действия обработчика</h2></div>
+<ol class="event-list">{% for event in run.events %}<li class="event {{ event.code }}"><time>{{ event.at|localtime('%H:%M:%S') }}</time><span class="event-dot"></span><div><strong>{{ event.message }}</strong>{% if event.title %}<a class="event-page" href="{{ wiki_url(event.title) }}" target="_blank" rel="noopener">{{ event.title }} ↗</a>{% endif %}{% if event.error %}<small>Код ошибки: {{ event.error }}</small>{% endif %}{% if event.revision %}<a class="revision-link" href="https://ru.wikipedia.org/w/index.php?oldid={{ event.revision }}" target="_blank" rel="noopener">Версия {{ event.revision }} ↗</a>{% endif %}{% if event.diff %}<details class="diff"><summary>Показать изменения</summary><pre>{{ event.diff }}</pre></details>{% endif %}</div></li>{% endfor %}</ol>
+</section>
+{% if module.slug in ['maintenance', 'translations', 'sections'] %}<details class="full-run-data"><summary>Полные данные журнала и настройки запуска</summary><pre class="plain-log">{{ log_text }}</pre></details>{% endif %}
+{% if run.report and module.slug == 'obkat' %}<div class="snapshot-links"><strong>Снимок отчёта этого запуска</strong><span>{{ run.report.problems }} проблем · {{ run.report.nuances }} нюансов</span><a href="{{ url_for('export_report', extension='txt', run=run.id) }}">TXT ↓</a><a href="{{ url_for('export_report', extension='json', run=run.id) }}">JSON ↓</a>{% if run.table_text %}<a href="{{ url_for('export_table', run_id=run.id) }}">Таблица в вики-разметке ↓</a>{% endif %}</div>{% endif %}
+{% endif %}
+{% endblock %}

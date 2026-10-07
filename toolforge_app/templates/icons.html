@@ -1,0 +1,67 @@
+{% macro icon(name, extra_class='') -%}
+<svg class="icon {{ extra_class }}" data-icon="{{ name }}" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+  {% if name == 'obkat' %}
+  <path d="M14 3H5a2 2 0 0 0-2 2v9l4-3h7a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Z"/><path d="M8 15v2a2 2 0 0 0 2 2h7l4 3V11a2 2 0 0 0-2-2M7 7h5"/>
+  {% elif name == 'maintenance-dates' %}
+  <rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 11h18M8 15h2M14 15h2M8 18h2"/>
+  {% elif name == 'maintenance-rq' %}
+  <rect x="2" y="6" width="6" height="12" rx="1"/><path d="M10 12h6m-3-3 3 3-3 3"/><rect x="18" y="3" width="4" height="7" rx="1"/><rect x="18" y="14" width="4" height="7" rx="1"/>
+  {% elif name == 'maintenance-rq-unwrap' %}
+  <rect x="8" y="8" width="8" height="8" rx="1"/><path d="M6 3H3v3M18 3h3v3M3 18v3h3M18 21h3v-3"/>
+  {% elif name == 'maintenance' %}
+  <rect x="3" y="7" width="16" height="14" rx="2"/><path d="M7 7V3h14v14h-2M7 12h8M7 16h5"/>
+  {% elif name == 'translations' %}
+  <path d="M3 5h11M8 3v2M5 5c0 5 3 8 7 10M12 5c0 5-3 8-7 10M13 21l4-10 4 10M15 17h4"/>
+  {% elif name == 'translations-categories' %}
+  <path d="M3 6h6l2 2h10v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6ZM3 6V4h7l2 2M8 12h8M8 16h5"/>
+  {% elif name == 'translations-talk' %}
+  <path d="M21 14a2 2 0 0 1-2 2H8l-5 5V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9ZM7 7h10M7 11h7"/>
+  {% elif name == 'sections-empty-to-fill' %}
+    <path d="M4 5h16M4 19h16M4 12h10m-3-3 3 3-3 3M18 9v6"/>
+  {% elif name == 'sections-fill-to-empty' %}
+    <path d="M4 5h16M4 19h16M20 12H10m3-3-3 3 3 3M6 9v6"/>
+  {% elif name == 'sections' %}
+  <path d="M12 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v4M13 3v5h5M8 12h4M8 16h2M18 15v6M15 18h6"/>
+  {% elif name == 'overview' %}
+  <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+  {% elif name == 'bell' %}
+  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>
+  {% elif name == 'status' %}
+  <path d="M3 12h4l3-8 4 16 3-8h4"/>
+  {% elif name == 'settings' %}
+  <path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6"/>
+  {% elif name == 'save' %}
+  <path d="M4 3h13l4 4v14H3V3h1ZM7 3v6h10V3M7 21v-8h10v8"/>
+  {% elif name == 'chevron' %}
+  <path d="m9 5 7 7-7 7"/>
+  {% elif name == 'console' %}
+  <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m6 8 4 4-4 4M13 16h5"/>
+  {% elif name == 'report' %}
+  <path d="M10 6h11M10 12h11M10 18h11m-18-12 1 1 2-2m-3 7 1 1 2-2m-3 7 1 1 2-2"/>
+  {% elif name == 'history' %}
+  <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+  {% elif name == 'queue' %}
+  <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+  {% elif name == 'pause' %}
+  <path d="M8 5v14M16 5v14"/>
+  {% elif name in ['resume', 'play'] %}
+  <path d="m7 4 14 8-14 8V4Z"/>
+  {% elif name == 'stop' %}
+  <rect x="5" y="5" width="14" height="14" rx="1.5"/>
+  {% elif name == 'restart' %}
+  <path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/>
+  {% elif name == 'download' %}
+  <path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>
+  {% elif name == 'arrow-right' %}
+  <path d="M4 12h16m-6-6 6 6-6 6"/>
+  {% elif name == 'redirect' %}
+  <path d="M5 4v7a2 2 0 0 0 2 2h13m-5-5 5 5-5 5"/>
+  {% elif name == 'user' %}
+  <circle cx="12" cy="7" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>
+  {% elif name == 'format' %}
+  <path d="M4 5h16M4 10h8M4 15h16M4 20h8M17 8v4M15 10h4"/>
+  {% else %}
+  <path d="M4 5h16M4 12h16M4 19h16"/>
+  {% endif %}
+</svg>
+{%- endmacro %}

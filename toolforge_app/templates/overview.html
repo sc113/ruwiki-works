@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% from 'icons.html' import icon %}
+{% block content %}
+<div class="page-heading"><div class="title-row"><span class="page-task-icon">{{ icon('overview') }}</span><h1>Все задачи бота</h1><details class="help-disclosure page-help"><summary aria-label="Как устроен список задач">?</summary><div class="help-content"><h2>О задачах бота</h2><p>Здесь собраны задачи бота, их состояние, последний и следующий запуск. Название или стрелка открывают страницу задачи.</p><p>Список обновляется каждые 15 секунд. Даты и результаты обновляются по данным исполнителя и монитора.</p>{% if is_admin %}<p>Пауза сохраняет очередь. Остановка отменяет ожидающие задания. Перезапуск назначает полный проход. Уже отправленный запрос к Википедии завершится перед остановкой.</p>{% endif %}</div></details></div></div>
+<div id="task-overview" data-refresh-url="{{ url_for('overview_fragment') }}">{% include 'task_list.html' %}</div>
+<div class="live-history" data-refresh-url="{{ url_for('recent_runs_fragment') }}">{% include 'recent_runs.html' %}</div>
+{% endblock %}

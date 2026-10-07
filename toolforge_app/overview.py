@@ -1,0 +1,96 @@
+"""Shared overview of enabled processors and their actual run/queue state."""
+import json
+import time
+
+from .processors import TASKS, Processor, get_processor
+from .processors.obkat.report import build_report
+from .processors.daily import TASK_SLUGS as DAILY_TASKS, get_config, report as daily_report
+from .schedules import get_schedule, schedule_fields, next_daily_time, next_month_end_time
+from .execution import ready_jobs
+from .issues import annotate_report
+
+OVERVIEW = Processor("overview", "Все задачи бота", "Задачи бота", "Состояние всех задач", True)
+
+
+def next_month_end(settings, now, store=None):
+    clock = get_schedule(settings, store, "obkat")["month_end_time"] if store else settings.month_end_time
+    return next_month_end_time(clock, now, settings.zone, store.get_state("last_month_end") if store else None)
+
+
+def build_overview(settings, store, now=None):
+    now = time.time() if now is None else now
+    cards = []
+    waiting = ready_jobs(store, now, exclude_running=True)
+    active_runs = [run for run in store.list_runs(20, processor=None, exclude_import=True) if run["status"] == "running"]
+    for task in TASKS:
+        processor = get_processor(task.processor)
+        if not task.enabled:
+            cards.append({"task": task, "processor": processor, "enabled": False,
+                          "status": "unconnected", "status_label": "Не подключена",
+                          "report": None, "queued": 0, "last_run": None, "next_job": None})
+            continue
+        maintenance = task.slug in DAILY_TASKS
+        config = get_config(store, task.slug) if maintenance else None
+        schedule = get_schedule(settings, store, task.slug)
+        report = daily_report(store, task.slug, config) if maintenance else annotate_report(store, task.slug, build_report(store.all_pages(processor.slug)))
+        history = store.list_runs(1, processor=task.slug, exclude_import=True)
+        imports = store.list_runs(1, processor=task.slug)
+        latest = history[0] if history else None
+        control = store.control(task.slug)
+        mode = control["mode"]
+        pending = store.queue(task.slug)
+        running = latest and latest["status"] == "running"
+        position = next((index + 1 + bool(active_runs) for index, job in enumerate(waiting)
+                         if job["processor"] == task.slug), None)
+        progress = None
+        if running:
+            events = json.loads(latest["events"])
+            terminal = {"edited", "would_edit", "unchanged", "missing", "bot_excluded"}
+            progress = dict(checked=sum(event["code"] in terminal for event in events),
+                            title=next((event["title"] for event in reversed(events) if event.get("title")), ""),
+                            message=events[-1]["message"] if events else "Начало обработки")
+        if running and mode == "active":
+            active_job = next((event.get("job") for event in json.loads(latest["events"])
+                               if event["code"] == "started"), None)
+            # Keep a newer edit of the same page visible as the next job.
+            if active_job:
+                pending = [job for job in pending
+                           if any(job[key] != value for key, value in active_job.items())]
+        prefix = task.slug + ":" if maintenance else ""
+        heartbeat = store.get_state(prefix + "worker_heartbeat", 0)
+        online = now - heartbeat < max(300, settings.poll_seconds * 4)
+        error = store.get_state(prefix + "worker_error") or report.get("monitor_error")
+        failed = latest and latest["status"] == "failed" and not (
+            control.get("action") == "restart" and latest["started_at"] < control["at"])
+        status = (mode if mode != "active" else "running" if running else "queued" if position
+                  else "error" if error or failed else "scheduled" if pending else
+                  "success" if latest and latest["status"] == "success" else "waiting" if online else "offline")
+        labels = {"paused": "Пауза запрошена" if running else "На паузе",
+                  "stopped": "Остановка запрошена" if running else "Остановлена",
+                  "error": "Ошибка", "running": "В работе", "scheduled": "Запланирована",
+                  "queued": "Ожидает очереди",
+                  "success": "Выполнена",
+                  "waiting": "Ожидает запуска", "offline": "Ожидает запуска"}
+        cards.append({"task": task, "processor": processor, "enabled": True, "report": report,
+            "last_run": latest, "snapshot": imports[0] if imports and imports[0]["kind"] == "import" else None,
+            "next_job": min(pending, key=lambda job: job["due_at"]) if pending else None,
+            "queued": len(pending), "online": online, "error": error,
+            "pending": pending,
+            "control": control, "running": running, "status": status, "status_label": labels[status],
+            "queue_position": position, "progress": progress,
+            "schedule": schedule, "schedule_fields": schedule_fields(settings, store, task.slug),
+            "last_search": report['latest_check'] if maintenance else store.get_state('last_poll'),
+            "next_scheduled": next_daily_time(schedule["run_time"], now) if maintenance else next_month_end(settings, now, store),
+            "run_time": config["run_time"] if maintenance else None,
+            "dry_run": not (settings.wiki_write and config["autosave"]) if maintenance else not settings.wiki_write,
+            "month_end": next_month_end(settings, now, store) if processor.slug == "obkat" else None})
+    groups = []
+    for card in cards:
+        group = next((group for group in groups if group["processor"] == card["processor"]), None)
+        if group is None:
+            group = {"processor": card["processor"], "cards": []}
+            groups.append(group)
+        group["cards"].append(card)
+    return {"cards": cards, "groups": groups, "enabled_count": sum(card["enabled"] for card in cards),
+        "total_problems": sum(card["report"]["problems"] for card in cards if card["report"]),
+        "total_queued": sum(card["queued"] for card in cards), "now": now}

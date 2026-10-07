@@ -1,0 +1,19 @@
+# Replace TOOL_NAME with the tool account name. Check the image with jobs images.
+# Build the image before loading these jobs. Configuration comes from envvars.
+# NFS supplies replica.my.cnf for the ToolsDB connection.
+- name: ruwiki-executor
+  image: tool-TOOL_NAME/tool-TOOL_NAME:latest
+  command: executor
+  continuous: true
+  health-check-script: launcher health-executor
+  mount: all
+  mem: 512Mi
+  emails: onfailure
+- name: ruwiki-monitor
+  image: tool-TOOL_NAME/tool-TOOL_NAME:latest
+  command: monitor
+  continuous: true
+  health-check-script: launcher health-monitor
+  mount: all
+  mem: 256Mi
+  emails: onfailure

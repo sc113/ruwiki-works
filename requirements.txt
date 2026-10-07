@@ -1,0 +1,9 @@
+Flask>=3.1,<4
+SQLAlchemy>=2.0.41,<3
+PyMySQL>=1.1,<2
+requests>=2.32,<3
+mwparserfromhell>=0.7,<1
+mwoauth>=0.4,<0.5
+python-dotenv>=1.0,<2
+tzdata>=2025.2
+gunicorn>=23,<24; sys_platform != 'win32'

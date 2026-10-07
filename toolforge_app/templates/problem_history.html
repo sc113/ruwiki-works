@@ -1,0 +1,8 @@
+{% if item.problem_history %}
+<p class="problem-history">
+  {{ icon('history') }}
+  <span>Обнаружено <time>{{ item.problem_history.first_seen|localtime }}</time></span>
+  <span>Подтверждено <time>{{ item.problem_history.last_seen|localtime }}</time></span>
+  {% if item.problem_history.episodes > 1 %}<span>Повторно: {{ item.problem_history.episodes - 1 }}</span>{% endif %}
+</p>
+{% endif %}

@@ -1,0 +1,5 @@
+{% if items %}
+<ul class="pending-articles skipped-articles {{ 'can-retry' if is_admin }}" aria-label="Пропущенные статьи">
+{% for item in items %}<li><a href="{{ wiki_url(item.title) }}" target="_blank" rel="noopener">{{ item.title }} ↗</a><span class="article-category">{{ item.reason }}</span>{% if is_admin %}<form class="article-retry" method="post" action="{{ url_for('retry_article', slug=task.slug) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="title" value="{{ item.title }}"><button class="button secondary" type="submit" {% if item.retry_queued or control.mode != 'active' %}disabled{% endif %}>{{ icon('restart') }}{{ 'В очереди' if item.retry_queued else 'Вернуть в очередь' }}</button></form>{% endif %}</li>{% endfor %}
+</ul>
+{% else %}<div class="empty-message">Пропущенных статей нет</div>{% endif %}

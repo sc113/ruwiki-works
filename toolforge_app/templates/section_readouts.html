@@ -1,0 +1,6 @@
+<section class="section-readouts" aria-labelledby="section-readouts-title">
+  <h3 class="settings-group-title" id="section-readouts-title">Перенаправления и сохранённые данные</h3>
+  <p class="settings-note">Перенаправления получаются автоматически. Срок кеша задаётся выше; при необходимости можно обновить список сейчас.</p>
+  <form action="{{ url_for('task_refresh', slug=task.slug) }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="mode" value="redirects"><button class="button secondary" type="submit">{{ icon('restart') }}Обновить перенаправления</button></form>
+  <div class="alias-readouts">{% for row in report.aliases %}<details><summary><span>{{ row.template }}</span><span class="alias-meta">{{ row.aliases|length }} имён · {{ row.at|localtime if row.at else 'Ещё не получены' }}</span></summary><p>{{ row.aliases|join(' · ') if row.aliases else 'Список будет получен при обработке или обновлении перенаправлений.' }}</p></details>{% endfor %}</div>
+</section>

@@ -1,0 +1,2 @@
+{% extends 'base.html' %}
+{% block content %}<div class="empty-state error-state"><div class="eyebrow">{{ code }}</div><h1>{{ 'Доступ к управлению есть только у admin' if code == 403 else 'Страница не найдена' if code == 404 else 'Не удалось выполнить запрос' }}</h1><p>{{ 'Войдите через учётную запись Википедии. Публичные отчёты доступны без входа.' if code == 403 else 'Вернитесь к отчёту или обновите страницу и попробуйте снова.' }}</p><a class="button primary" href="{{ url_for('index') }}">Открыть отчёт</a></div>{% endblock %}
