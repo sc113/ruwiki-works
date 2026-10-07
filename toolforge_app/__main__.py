@@ -45,7 +45,7 @@ def import_snapshot(source, store):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Shared Wikimedia processor service")
+    parser = argparse.ArgumentParser(description="Russian Wikipedia bot tasks and monitoring interface")
     commands = parser.add_subparsers(dest="command", required=True)
     serve = commands.add_parser("serve")
     serve.add_argument("--port", type=int, default=5000)
