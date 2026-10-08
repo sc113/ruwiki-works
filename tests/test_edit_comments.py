@@ -1,4 +1,5 @@
 import json
+import re
 from unittest.mock import Mock
 
 import pytest
@@ -100,6 +101,41 @@ def test_long_comments_preserve_unicode_links_and_final_source():
     link = '[[ш:' + 'А' * 240 + ']]'
     fitted = fit_comment('Слово ' * 70 + link + ' продолжение')
     assert len(fitted) <= 500 and fitted.count('[[') == fitted.count(']]')
+
+
+def test_long_dates_comments_preserve_every_redirect_and_installation_diff():
+    rows = [dict(template='Дополнить раздел', previous='Expand section' if n == 0 else 'Expand',
+                 section_scoped=True, section=('Очень длинное название раздела статьи ' * 5) + str(n),
+                 date=f'2020-01-0{n + 1}', revision=123 + n) for n in range(3)]
+    full = dates_comment(rows)
+    assert len(full) > 500
+    fitted = fit_comment(full)
+    assert len(fitted) <= 500
+    for link in set(re.findall(r'\[\[.*?\]\]', full)):
+        assert link in fitted
+    assert 'Замена редиректа [[ш:Expand section]] и [[ш:Expand]] на актуальный [[ш:Дополнить раздел]]' in fitted
+
+
+def test_shortened_api_comment_keeps_all_template_and_source_links(settings):
+    rows = [dict(template=name, previous='Rq', action='inserted_template', parameter=parameter,
+                 date='2020-01-02', revision=123 + n, source_kind='standalone',
+                 source_variant=alias) for n, (name, parameter, alias) in enumerate([
+                     ('Нет источников', 'sources', 'Sources'),
+                     ('Оформить литературу', 'isbn', 'Литература'),
+                     ('Проверить факты', 'check', 'Факты'),
+                     ('Дописать', 'empty', 'Expand'),
+                     ('Проверить нейтральность', 'neutral', 'NPOV')])]
+    full = rq_comment(rows)
+    links = set(re.findall(r'\[\[.*?\]\]', full))
+    assert len(full) > 500 and len(' '.join(links)) < 498
+    client = WikiClient(settings)
+    client.login = Mock()
+    client.request = Mock(side_effect=[{'query': {'tokens': {'csrftoken': 'TOKEN'}}},
+                                      {'edit': {'result': 'Success', 'newrevid': 2}}])
+    client.edit_article(Revision('Пример', 1, 1, 'old'), 'new', full, {'Пример'})
+    submitted = client.request.call_args.args[0]['summary']
+    assert len(submitted) <= 500
+    assert all(link in submitted for link in links)
 
 
 def test_dry_run_comments_are_full_for_admin_and_absent_from_public_logs(settings, store):

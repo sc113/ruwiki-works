@@ -6,9 +6,21 @@ COMMENT_LIMIT = 500  # Unicode characters, not UTF-8 bytes.
 
 
 def fit_comment(text, limit=COMMENT_LIMIT):
-    """Shorten only when required, never in the middle of a wikilink."""
+    """Shorten prose first; retain every distinct wikilink whenever they fit."""
     if len(text) <= limit:
         return text
+    links = list(dict.fromkeys(re.findall(r'\[\[.*?\]\]', text)))
+    if links and len('… ' + ' '.join(links)) <= limit:
+        budget = limit
+        for _ in range(len(links) + 2):
+            shortened = _trim_comment(text, budget)
+            missing = [link for link in links if link not in shortened]
+            suffix = ' ' + ' '.join(missing) if missing else ''
+            if len(shortened) + len(suffix) <= limit:
+                return shortened + suffix
+            budget = limit - len(suffix)
+    # Some sets of links alone exceed the API limit. Keep the final source
+    # and intact earlier links; the unabridged comment remains in admin logs.
     sources = list(re.finditer(r'\[\[Special:Diff/[^\]]+\]\]', text, re.I))
     if sources and sources[-1].end() > limit and len(sources[-1][0]) + 2 < limit:
         suffix = ' ' + sources[-1][0]
