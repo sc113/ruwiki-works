@@ -88,7 +88,8 @@ def build_overview(settings, store, now=None):
             "last_search": report['latest_check'] if maintenance else store.get_state('last_poll'),
             "next_scheduled": next_daily_time(schedule["run_time"], now) if maintenance else next_month_end(settings, now, store),
             "run_time": config["run_time"] if maintenance else None,
-            "dry_run": not (settings.wiki_write and config["autosave"]) if maintenance else not settings.wiki_write,
+            "dry_run": bool(latest['dry_run']) if running else (
+                not (settings.wiki_write and config["autosave"]) if maintenance else not settings.wiki_write),
             "month_end": next_month_end(settings, now, store) if processor.slug == "obkat" else None})
     groups = []
     for card in cards:

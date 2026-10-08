@@ -15,6 +15,17 @@ from toolforge_app.worker import RunControlled, Worker
 from test_web import set_session
 
 
+@pytest.mark.parametrize('slug', ['obkat', 'maintenance-dates'])
+def test_running_pass_keeps_its_actual_mode_when_write_switch_changes(settings, store, slug):
+    settings.wiki_write = True
+    run_id = store.start_run('full', 'admin', dry_run=True, processor=slug)
+    card = next(card for card in build_overview(settings, store)['cards'] if card['task'].slug == slug)
+    assert card['running'] and card['dry_run']
+    store.finish_run(run_id, [], {}, {}, status='success')
+    card = next(card for card in build_overview(settings, store)['cards'] if card['task'].slug == slug)
+    assert not card['running'] and not card['dry_run']
+
+
 def test_paused_executor_stays_online_and_leaves_queue_intact(settings, store):
     store.set_state('service:executor', {'enabled': False})
     store.enqueue('manual', 'full', 1)
