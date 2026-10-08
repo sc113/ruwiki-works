@@ -4,7 +4,7 @@
 
 ## 1. Публичный репозиторий и заявка
 
-Опубликовать новый проект как публичный `ruwiki-works` с лицензией MIT. Включить код, тесты, документацию, `requirements.txt`, `Procfile`, `.python-version` и `.env.example`. `.env`, локальная база, `var/`, дампы и старые папки с BotPassword/куками в репозиторий не входят. Зависимость Pywikibot в новой версии не нужна.
+Опубликовать проект как публичный `ruwiki-works` с лицензией MIT. Включить код, тесты, документацию, `requirements.txt`, `Procfile`, `.python-version` и `.env.example`. `.env`, локальная база, `var/`, дампы, BotPassword и файлы сессий в репозиторий не входят.
 
 Создать [Wikimedia developer account](https://toolsadmin.wikimedia.org/register/), затем [подать заявку на членство Toolforge](https://toolsadmin.wikimedia.org/tools/membership/apply). Готовый английский текст — в [TOOLFORGE.md](TOOLFORGE.md). Добавить в него ссылку на репозиторий. После одобрения выйти из Toolsadmin и войти снова, создать tool account и добавить публичный SSH-ключ. [Официальный Quickstart](https://wikitech.wikimedia.org/wiki/Help:Toolforge/Quickstart).
 
@@ -50,7 +50,7 @@ toolforge envvars create TOOLFORGE_WIKI_WRITE 'false'
 toolforge envvars create TOOLFORGE_SECRET_KEY
 ```
 
-Значение должно сохраняться между перезапусками. Пароли и ключи тоже вводить через интерактивный запрос, без значений в командной строке. CLI может показать введённое значение в результате: такой вывод не публиковать. [Envvars](https://wikitech.wikimedia.org/wiki/Help:Toolforge/Envvars).
+Значение должно сохраняться между перезапусками. Пароли и ключи тоже вводить через интерактивный запрос, без значений в командной строке. CLI может показать введённое значение в результате: такой вывод не публиковать. При передаче значения через stdin не добавлять завершающий перевод строки. [Envvars](https://wikitech.wikimedia.org/wiki/Help:Toolforge/Envvars).
 
 ## 3. Сборка и создание таблиц
 
@@ -72,7 +72,7 @@ toolforge jobs run ruwiki-init --image tool-ruwiki-works/tool-ruwiki-works:lates
 ## 4. Сайт, OAuth и фоновые задания
 
 ```bash
-toolforge webservice buildservice start --mount=all
+toolforge webservice --mount all --health-check-path /healthz buildservice start
 toolforge webservice buildservice logs -f
 ```
 
@@ -111,7 +111,7 @@ toolforge envvars create TOOLFORGE_BOT_PASSWORD
 toolforge envvars create TOOLFORGE_USER_AGENT 'ruwiki-works/1.0 (https://github.com/sc113/ruwiki-works)'
 ```
 
-Логин BotPassword имеет вид `BOT_ACCOUNT@PASSWORD_NAME`. После осознанного включения записи изменить `TOOLFORGE_WIKI_WRITE` на `true` через `toolforge envvars update`, затем перезапустить сайт и задания:
+Логин BotPassword имеет вид `BOT_ACCOUNT@PASSWORD_NAME`. После осознанного включения записи изменить `TOOLFORGE_WIKI_WRITE` на `true` через `toolforge envvars create TOOLFORGE_WIKI_WRITE true`, затем перезапустить сайт и задания:
 
 ```bash
 toolforge webservice restart
