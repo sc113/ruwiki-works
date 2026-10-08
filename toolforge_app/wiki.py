@@ -278,7 +278,8 @@ class WikiClient:
         return result
 
     def login(self):
-        if not self.settings.wiki_write:
+        from .runtime import writes_enabled
+        if not writes_enabled(self.base_settings, self.store):
             raise WikiError("writes-disabled")
         if self.store:
             from .connections import effective_settings

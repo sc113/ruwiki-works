@@ -13,6 +13,7 @@ from .execution import execution_slot
 from .schedules import after_edit_due, get_schedule, month_end_deadline
 from .run_statistics import report_changes, report_snapshot
 from .wiki import RUN_ERRORS, WikiClient, WikiError, bot_may_edit, epoch
+from .runtime import execution_settings, service_enabled
 
 
 class RunControlled(Exception):
@@ -23,6 +24,7 @@ class RunControlled(Exception):
 class Worker:
     def __init__(self, settings, store, wiki=None):
         self.settings, self.store = settings, store
+        self.base_settings = settings
         self.wiki = wiki or WikiClient(settings, store)
         self.events = []
         self.completed_pages = []
@@ -40,6 +42,8 @@ class Worker:
 
     def check_control(self):
         self.renew()
+        if self.execution_generation is not None and not service_enabled(self.store, 'executor'):
+            raise RunControlled('paused')
         control = self.store.control()
         if self.execution_generation is None:
             if control["mode"] == "stopped":
@@ -194,6 +198,9 @@ class Worker:
         return table
 
     def execute(self, job):
+        if not service_enabled(self.store, 'executor'):
+            return
+        self.settings = execution_settings(self.base_settings, self.store)
         with execution_slot(self, "obkat", job) as acquired:
             if acquired:
                 self._execute(job)
@@ -330,8 +337,11 @@ class Worker:
             # Check jobs frequently for prompt manual starts. Poll the wiki at
             # its own interval; every page still fetches a fresh base before edit.
             # A failed due poll blocks execution until connectivity is restored.
-            if not self.watch(now):
+            if service_enabled(self.store, 'monitor') and not self.watch(now):
                 return False
+            if not service_enabled(self.store, 'executor'):
+                return True
+            self.schedule_month_end(now)
             if self.store.control()["mode"] != "active":
                 return True
             if not self.store.get_state("live_sync_initialized"):

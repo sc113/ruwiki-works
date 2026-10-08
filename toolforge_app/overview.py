@@ -8,6 +8,7 @@ from .processors.daily import TASK_SLUGS as DAILY_TASKS, get_config, report as d
 from .schedules import get_schedule, schedule_fields, next_daily_time, next_month_end_time
 from .execution import ready_jobs
 from .issues import annotate_report
+from .runtime import execution_settings, service_enabled
 
 OVERVIEW = Processor("overview", "Все задачи бота", "Задачи бота", "Состояние всех задач", True)
 
@@ -18,6 +19,7 @@ def next_month_end(settings, now, store=None):
 
 
 def build_overview(settings, store, now=None):
+    settings = execution_settings(settings, store)
     now = time.time() if now is None else now
     cards = []
     waiting = ready_jobs(store, now, exclude_running=True)
@@ -65,12 +67,16 @@ def build_overview(settings, store, now=None):
         status = (mode if mode != "active" else "running" if running else "queued" if position
                   else "error" if error or failed else "scheduled" if pending else
                   "success" if latest and latest["status"] == "success" else "waiting" if online else "offline")
+        if mode == 'active' and not service_enabled(store, 'executor'):
+            status = 'paused'
         labels = {"paused": "Пауза запрошена" if running else "На паузе",
                   "stopped": "Остановка запрошена" if running else "Остановлена",
                   "error": "Ошибка", "running": "В работе", "scheduled": "Запланирована",
                   "queued": "Ожидает очереди",
                   "success": "Выполнена",
                   "waiting": "Ожидает запуска", "offline": "Ожидает запуска"}
+        if mode == 'active' and not service_enabled(store, 'executor'):
+            labels['paused'] = 'Обработка выключена'
         cards.append({"task": task, "processor": processor, "enabled": True, "report": report,
             "last_run": latest, "snapshot": imports[0] if imports and imports[0]["kind"] == "import" else None,
             "next_job": min(pending, key=lambda job: job["due_at"]) if pending else None,

@@ -9,6 +9,7 @@ from .processors.translations.service import TranslationWorker, TranslationMonit
 from .processors.sections import TASK_SLUGS as SECTION_TASKS
 from .processors.sections.service import SectionWorker, SectionMonitor
 from .health import system_status
+from .runtime import ObservationPaused, service_enabled
 
 
 class Dispatcher:
@@ -25,6 +26,9 @@ class Dispatcher:
             if not renew:
                 return False
             self.store.set_state("executor_heartbeat", now)
+            if not service_enabled(self.store, 'executor'):
+                system_status(self.settings, self.store)
+                return True
             def heartbeat():
                 renew()
                 self.store.set_state('executor_heartbeat', time.time())
@@ -32,6 +36,8 @@ class Dispatcher:
             for worker in [*self.maintenance, *self.translations, *self.sections]:
                 worker.schedule(now)
             for worker in [self.obkat, *self.maintenance, *self.translations, *self.sections]:
+                if not service_enabled(self.store, 'executor'):
+                    break
                 renew()
                 previous_renew = worker.outer_renew
                 worker.outer_renew = heartbeat
@@ -74,7 +80,12 @@ class Monitor:
             self.store.set_state('monitor_started_at', time.time())
         def heartbeat():
             self.store.set_state('monitor_heartbeat', time.time())
-        heartbeat()
+            if not service_enabled(self.store, 'monitor'):
+                raise ObservationPaused()
+        self.store.set_state('monitor_heartbeat', time.time())
+        if not service_enabled(self.store, 'monitor'):
+            system_status(self.settings, self.store)
+            return
         for monitor in (self.inventory, self.translations, self.sections):
             monitor.outer_renew = heartbeat
         previous_renew = self.obkat.outer_renew
@@ -87,6 +98,8 @@ class Monitor:
                                (self.sections, SECTION_TASKS)):
             try:
                 monitor.tick()
+            except ObservationPaused:
+                return
             except Exception:
                 for slug in slugs:
                     self.store.set_state(slug + ':monitor_error', dict(code='internal', at=time.time()))
@@ -101,6 +114,8 @@ class Monitor:
         while True:
             try:
                 self.tick()
+            except ObservationPaused:
+                pass
             except Exception:
                 import traceback
                 traceback.print_exc()

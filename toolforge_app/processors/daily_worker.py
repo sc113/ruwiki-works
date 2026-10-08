@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from ..execution import execution_slot
 from ..schedules import get_schedule, next_daily_time
 from ..wiki import WikiClient
+from ..runtime import execution_settings, service_enabled
 
 MOSCOW = ZoneInfo("Europe/Moscow")
 
@@ -18,6 +19,7 @@ class Controlled(Exception):
 class DailyWorker:
     def __init__(self, settings, store, slug, wiki=None):
         self.settings, self.store, self.slug = settings, store, slug
+        self.base_settings = settings
         self.wiki = wiki or WikiClient(settings, store)
         self.generation = None
         self.renew = lambda: None
@@ -27,6 +29,8 @@ class DailyWorker:
 
     def checkpoint(self):
         self.renew()
+        if self.generation is not None and not service_enabled(self.store, 'executor'):
+            raise Controlled('paused')
         control = self.store.control(self.slug)
         if self.generation is not None and (control["mode"] != "active" or control["generation"] != self.generation):
             raise Controlled(control["mode"])
@@ -50,6 +54,9 @@ class DailyWorker:
 
 
     def execute(self, job):
+        if not service_enabled(self.store, 'executor'):
+            return
+        self.settings = execution_settings(self.base_settings, self.store)
         with execution_slot(self, self.slug, job) as acquired:
             if acquired:
                 self._execute(job)

@@ -29,6 +29,7 @@ from .connections import (ERRORS as CONNECTION_ERRORS, FIELDS as CONNECTION_FIEL
                           connection_summary, effective_settings, probe_bot, probe_oauth,
                           record_check, save_credentials)
 from .wiki import WikiError
+from .runtime import execution_settings, service_enabled, writes_enabled
 
 STATUS_LABELS = {"success": "Завершён", "failed": "Ошибка", "running": "В работе", "interrupted": "Прерван",
                  "paused": "Приостановлен", "stopped": "Остановлен"}
@@ -95,7 +96,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
                 slug = kwargs.get("slug")
                 if slug in TASK_SLUGS:
                     return redirect(url_for("processor", slug=get_task(slug).processor, task=slug))
-                if request.endpoint in {'connection_save', 'connection_check'}:
+                if request.endpoint in {'connection_save', 'connection_check', 'service_control'} or request.form.get('return_to') == 'connections':
                     return redirect(url_for('connections_page'))
                 return redirect(url_for("processor", slug="obkat") if request.endpoint in {"request_run", "task_schedule"}
                                 or request.form.get("return_to") == "processor" else url_for("index"))
@@ -182,7 +183,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
     def context():
         heartbeat = store.get_state("worker_heartbeat", 0)
         preview = preview_active()
-        return dict(processors=PROCESSORS, settings=settings, csrf_token=csrf_token,
+        return dict(processors=PROCESSORS, settings=execution_settings(settings, store), csrf_token=csrf_token,
             now=time.time(),
             username="admin" if preview else session.get("username"),
             is_admin=preview or authenticated_admin(),
@@ -227,7 +228,42 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         return render_template('connections.html',
             module=Processor('connections', 'Подключения', 'Подключения', '', True),
             connections=connection_summary(current, store), connection_error=connection_error,
-            bot_login=current.bot_login, rights=RIGHTS, database_kind=store.engine.dialect.name)
+            bot_login=current.bot_login, rights=RIGHTS, database_kind=store.engine.dialect.name,
+            overview=build_overview(settings, store), write_ceiling=settings.wiki_write,
+            writes_allowed=writes_enabled(settings, store))
+
+    @app.route('/admin/services/<name>', methods=['POST'])
+    @admin_required
+    def service_control(name):
+        if name not in {'executor', 'monitor', 'writes'}:
+            abort(404)
+        action = request.form.get('action')
+        if action not in {'enable', 'disable'}:
+            abort(400)
+        if action == 'enable':
+            if name == 'writes':
+                if not settings.wiki_write:
+                    abort(409, 'Запись запрещена в настройках сервера. Сначала завершите проверку пробного запуска.')
+                try:
+                    current = credentials('bot')
+                except WikiError:
+                    abort(409, 'Сначала восстановите подключение бота.')
+                if not connection_summary(current, store)['bot']['check'].get('verified'):
+                    abort(409, 'Сначала проверьте подключение и права бота.')
+            elif not component_health(settings, store, name)['online']:
+                abort(409, 'Нет связи с процессом. Проверьте фоновое задание Toolforge.')
+        store.set_state('service:' + name, dict(enabled=action == 'enable', at=time.time(), by=session['username']))
+        flash(('Запись в Википедию' if name == 'writes' else 'Обработка задач' if name == 'executor' else 'Поиск изменений') +
+              (' включена.' if action == 'enable' else ' выключена. Текущий запрос завершится; новые действия не начнутся.'))
+        return redirect(url_for('connections_page'))
+
+    @app.route('/admin/status-fragment')
+    def admin_status_fragment():
+        if not full_logs():
+            abort(403)
+        return render_template('admin_status.html', overview=build_overview(settings, store),
+            database_kind=store.engine.dialect.name, write_ceiling=settings.wiki_write,
+            writes_allowed=writes_enabled(settings, store))
 
     def check_connection(name, current):
         # One shared cooldown across web instances prevents repeated login attempts.
@@ -562,6 +598,8 @@ def create_app(settings=None, store=None, *, admin_preview=False):
                "stop": "Задача остановлена, ожидающие задания отменены. Текущий запрос к Википедии завершится.",
                "restart": "Задача перезапущена: запланирована проверка новых статей." if task.processor in {"translations", "sections"}
                           else "Задача перезапущена: запланирована полная обработка."}[action])
+        if request.form.get('return_to') == 'connections':
+            return redirect(url_for('connections_page') + '#tasks')
         return redirect(url_for("processor", slug=module.slug, task=task.slug) if request.form.get("return_to") == "processor"
                         else url_for("index"))
 

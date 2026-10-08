@@ -3,13 +3,14 @@ import time
 
 from .processors import TASKS
 from .schedules import get_schedule, next_daily_time
+from .runtime import service_enabled
 
 
 def component_health(settings, store, component, now=None):
     now = time.time() if now is None else now
     at = store.get_state(component + '_heartbeat', 0)
     return dict(name='Исполнитель' if component == 'executor' else 'Монитор', at=at,
-                online=bool(at and now - at < 300))
+                online=bool(at and now - at < 300), enabled=service_enabled(store, component))
 
 
 def system_status(settings, store, now=None):
@@ -25,13 +26,13 @@ def system_status(settings, store, now=None):
     def alert(key, title, message, target='/console'):
         conditions[key] = dict(title=title, message=message, target=target)
 
-    if not stopped:
+    if not stopped and any(c['enabled'] for c in components.values()):
         if not any(c['at'] for c in components.values()):
             alert('service:not-started', 'Фоновая обработка не запущена',
                   'Сайт доступен, но исполнитель и монитор ещё не сообщили о запуске.')
         else:
             for key, component in components.items():
-                if not component['online']:
+                if component['enabled'] and not component['online']:
                     alert('service:' + key, component['name'] + ' недоступен',
                           'Нет свежего сигнала от процесса. Проверьте фоновое задание Toolforge.')
     for task in tasks:
@@ -59,13 +60,13 @@ def system_status(settings, store, now=None):
             checked = store.get_state(task.slug + ':inventory', {}).get('checked_at', 0)
             max_age = get_schedule(settings, store, task.slug)['search_minutes'] * 60 + 3600
         started = store.get_state('monitor_started_at', 0)
-        if (checked and now - checked > max_age) or (not checked and started and now - started > max_age):
+        if components['monitor']['enabled'] and ((checked and now - checked > max_age) or (not checked and started and now - started > max_age)):
             stale.add(task.slug)
             alert('stale:' + task.slug, 'Данные устарели: ' + task.title,
                   'Счётчики или страницы не были обновлены в ожидаемый срок.', target)
 
     # A ready task waiting behind a running action has not missed its turn.
-    if not running:
+    if not running and components['executor']['enabled']:
         for task in tasks:
             if 'daily' not in task.schedules or controls[task.slug]['mode'] != 'active':
                 continue
@@ -83,12 +84,16 @@ def system_status(settings, store, now=None):
     executor, monitor = components['executor'], components['monitor']
     if stopped:
         status, label = 'stopped', 'Бот остановлен'
+    elif not executor['enabled']:
+        status, label = 'paused', 'Обработка выключена'
     elif paused:
         status, label = 'paused', 'Обработка приостановлена'
     elif not executor['online']:
         status, label = 'offline', 'Нет связи с обработчиком' if executor['at'] else 'Обработка не запущена'
     elif running:
         status, label = 'running', 'В работе'
+    elif not monitor['enabled']:
+        status, label = 'warning', 'Работает · поиск выключен'
     elif not monitor['online']:
         status, label = 'warning', 'Работает · наблюдение недоступно'
     elif conditions:

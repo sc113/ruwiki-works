@@ -28,6 +28,19 @@ document.querySelectorAll('[data-section-nav]').forEach((select) => {
   select.addEventListener('change', () => location.assign(select.value));
 });
 const healthPanel = document.getElementById('system-health');
+const adminSystemPanel = document.getElementById('admin-system-status');
+if (adminSystemPanel) {
+  let refreshing = false;
+  setInterval(async () => {
+    if (refreshing || submittingCommand || document.hidden || adminSystemPanel.contains(document.activeElement)) return;
+    refreshing = true;
+    try {
+      const response = await fetch(adminSystemPanel.dataset.refreshUrl, {cache: 'no-store'});
+      if (response.ok) adminSystemPanel.innerHTML = await response.text();
+    } catch { /* Preserve the last confirmed state. */ }
+    finally { refreshing = false; }
+  }, 5000);
+}
 if (healthPanel) {
   let refreshing = false;
   setInterval(async () => {
