@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 metadata = MetaData()
 large_text = Text().with_variant(LONGTEXT(), "mysql")
-epoch_time = Float().with_variant(DOUBLE(), "mysql")
+epoch_time = Float().with_variant(DOUBLE(asdecimal=False), "mysql")
 pages = Table("pages", metadata,
     Column("title", String(255), primary_key=True),
     Column("processor", String(32), nullable=False),
