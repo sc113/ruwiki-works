@@ -27,7 +27,7 @@
     <label class="compact-nav"><span class="sr-only">Перейти в раздел</span><select data-section-nav aria-label="Текущий раздел">
       <option value="{{ url_for('index') }}" {% if module.slug == 'overview' and request.endpoint != 'notifications_page' %}selected{% endif %}>Обзор</option>
       {% for p in processors %}<option value="{{ url_for('processor', slug=p.slug) }}" {% if p.slug == module.slug %}selected{% endif %}>{{ p.title }}</option>{% endfor %}
-      <option value="{{ url_for('run_history_page') }}" {% if module.slug == 'activity' %}selected{% endif %}>Работы бота</option>
+      <option value="{{ url_for('run_history_page') }}" {% if module.slug == 'activity' %}selected{% endif %}>Выполнение и логи</option>
       {% if is_admin %}<option value="{{ url_for('notifications_page') }}" {% if request.endpoint == 'notifications_page' %}selected{% endif %}>Уведомления</option>{% endif %}
     </select></label>
   </aside>
@@ -35,7 +35,7 @@
     <header class="topbar">
       <div class="breadcrumb">Задачи бота <span>/</span> <strong>{{ module.short_title }}</strong></div>
       <div class="account">
-      <a class="console-link {% if module.slug == 'activity' %}current{% endif %}" href="{{ url_for('run_history_page') }}" {% if module.slug == 'activity' %}aria-current="page"{% endif %}>{{ icon('console') }}Работы бота</a>
+      <a class="console-link {% if module.slug == 'activity' %}current{% endif %}" href="{{ url_for('run_history_page') }}" {% if module.slug == 'activity' %}aria-current="page"{% endif %}>{{ icon('console') }}Выполнение и логи</a>
       {% if is_admin %}
       <details class="profile-menu"><summary {% if preview_admin %}title="Предпросмотр admin"{% endif %}><span class="avatar">{{ username[0] }}</span><span>{{ username }}<small>{{ 'Только просмотр' if preview_admin else 'Администратор' }}</small></span>{{ icon('chevron') }}</summary>
         <div class="profile-options"><a href="{{ url_for('profile_page') }}">{{ icon('settings') }}Настройки профиля</a><a href="{{ url_for('notifications_page') }}">{{ icon('bell') }}Уведомления</a>

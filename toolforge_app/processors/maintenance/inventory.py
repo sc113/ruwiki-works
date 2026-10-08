@@ -101,11 +101,16 @@ def report(store, slug, config=None):
         inventory = None
     result = store.get_state(slug + ":result", {})
     current = inventory["articles"] if inventory else {}
+    excluded = [dict(item, categories=current[item['title']]) for item in result.get('excluded', [])
+                if result.get('source') == source and item['title'] in current]
+    excluded_titles = {item['title'] for item in excluded}
     manual = [dict(item, categories=current[item["title"]]) for item in result.get("manual", [])
-              if result.get("source") == source and item["title"] in current]
+              if result.get("source") == source and item["title"] in current and item['title'] not in excluded_titles]
     return {"problems": len(manual), "nuances": 0, "pages": inventory["total"] if inventory else 0,
-            "to_process": inventory["total"] if inventory else None, "latest_check": inventory["checked_at"] if inventory else None,
+            "to_process": len(current) - len(excluded) if inventory else None, "latest_check": inventory["checked_at"] if inventory else None,
             "source": source, "categories": inventory["categories"] if inventory else [], "manual": manual,
-            "pending_articles": [dict(title=title, categories=categories) for title, categories in sorted(current.items())],
+            "excluded": excluded, "skipped": len(excluded), "skipped_articles": excluded,
+            "pending_articles": [dict(title=title, categories=categories) for title, categories in sorted(current.items())
+                                 if title not in excluded_titles],
             "after_run": result.get("at") if result.get("source") == source else None,
             "monitor_error": store.get_state(slug + ":monitor_error")}

@@ -8,7 +8,7 @@ from .run_statistics import public_summary
 from .execution import ready_jobs
 
 
-ACTIVITY = Processor("activity", "Работы бота", "Работы бота", "История всех работ", True)
+ACTIVITY = Processor("activity", "Выполнение и логи", "Выполнение и логи", "Запуски задач и журнал выполнения", True)
 
 
 def decode_run(run):

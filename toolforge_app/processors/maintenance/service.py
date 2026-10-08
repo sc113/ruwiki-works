@@ -4,7 +4,7 @@ import time
 
 import mwparserfromhell
 
-from ...wiki import RUN_ERRORS, WikiClient, WikiError, require_bot_permission
+from ...wiki import RUN_ERRORS, WikiClient, WikiError, bot_edit_block, require_bot_permission
 from ..daily_worker import DailyWorker, Controlled, MOSCOW
 from ...schedules import next_daily_time, search_interval
 from ...run_statistics import report_changes, report_snapshot
@@ -38,7 +38,8 @@ class MaintenanceWorker(DailyWorker):
         self.run_id = self.store.start_run(job["kind"], job["requested_by"], dry_run=dry_run, processor=self.slug, job=job)
         summary = dict(checked=0, changed=0, proposed=0, skipped=0, errors=0, remaining=None)
         before_report = report_snapshot(report(self.store, self.slug, config))
-        errors, notes_by_title, controlled, failed = {}, {}, None, False
+        errors, unresolved, excluded, notes_by_title = {}, {}, {}, {}
+        controlled, failed = None, False
         result_report = {}
         try:
             self.event("started", "Начало обработки", configuration=config, job={key: job[key] for key in ("key", "revision", "due_at", "spacing")})
@@ -106,6 +107,8 @@ class MaintenanceWorker(DailyWorker):
                         summary["skipped"] += 1
                         reason = '; '.join(notes) or ('В RQ нет параметров, подходящих для замены'
                             if self.slug == 'maintenance-rq' and not used else 'Изменения не требуются')
+                        unresolved[title] = reason if reason != 'Изменения не требуются' else (
+                            'Не найдено изменений для очистки категории; проверьте шаблоны и их параметры')
                         self.event("unchanged", reason, title=title)
                         continue
                     self.checkpoint()
@@ -123,6 +126,11 @@ class MaintenanceWorker(DailyWorker):
                     self.event(code, message, title=title, changes=changes, revision=revision,
                                diff_before=base.text, diff_after=text)
                 except WikiError as exc:
+                    if exc.code == 'bot-excluded':
+                        excluded[title] = ERROR_LABELS[exc.code]
+                        summary['skipped'] += 1
+                        self.event('bot_excluded', excluded[title], title=title, error=exc.code)
+                        continue
                     if exc.code in RUN_ERRORS:
                         self.event('error', 'Не удалось обработать страницу', title=title, error=exc.code)
                         raise
@@ -134,16 +142,48 @@ class MaintenanceWorker(DailyWorker):
             summary["remaining"] = after["total"]
             summary["verification"] = not dry_run
             if not dry_run:
-                manual = [{"title": title, "reason": errors.get(title) or "; ".join(notes_by_title.get(title, []))
-                           or "Статья осталась в отслеживающей категории; проверьте шаблоны и их параметры"}
-                          for title in sorted(after["articles"])]
-                self.store.set_state(self.slug + ":result", dict(source=source_category(self.slug, config),
-                                     at=time.time(), manual=manual, run_id=self.run_id))
-                failed = bool(manual or summary["errors"])
-                self.event("remaining", f"Осталось статей после обработки: {after['total']}", categories=after["categories"])
+                # New category members also need verification, including bot exclusions.
+                for title in sorted(set(after['articles']) - selected):
+                    self.checkpoint()
+                    try:
+                        if bot_edit_block(self.wiki.fetch(title).text, self.settings.bot_username) == 'bot-excluded':
+                            excluded[title] = ERROR_LABELS['bot-excluded']
+                    except WikiError as exc:
+                        if exc.code in RUN_ERRORS:
+                            raise
+                        errors[title] = ERROR_LABELS.get(exc.code, 'Ошибка проверки: ' + exc.code)
+                        summary['errors'] += 1
+                candidates = {title: errors.get(title) or unresolved.get(title)
+                              or '; '.join(notes_by_title.get(title, []))
+                              or 'Статья осталась в отслеживающей категории; проверьте шаблоны и их параметры'
+                              for title in after['articles']}
             else:
-                failed = bool(summary["errors"])
+                # A proposal is not a cleanup failure. An article with no possible
+                # edit is already a confirmed manual issue, even in a dry run.
+                previous = self.store.get_state(self.slug + ':result', {})
+                candidates = {item['title']: item['reason'] for item in previous.get('manual', [])
+                              if previous.get('source') == source_category(self.slug, config)}
+                candidates.update(unresolved)
+                candidates.update({title: '; '.join(notes) for title, notes in notes_by_title.items() if notes})
+                candidates.update(errors)
+            manual = [dict(title=title, reason=reason) for title, reason in sorted(candidates.items())
+                      if title in after['articles'] and title not in excluded]
+            exclusions = [dict(title=title, reason=reason) for title, reason in sorted(excluded.items())
+                          if title in after['articles']]
+            self.store.set_state(self.slug + ':result', dict(source=source_category(self.slug, config),
+                at=time.time(), manual=manual, excluded=exclusions, verification=not dry_run, run_id=self.run_id))
+            manual_titles = {item['title'] for item in manual}
+            for event in self.events:
+                if event['code'] == 'unchanged' and event.get('title') in manual_titles:
+                    event['requires_manual'] = True
+            failed = bool(manual or summary['errors'])
+            if not dry_run:
+                self.event('remaining', f"Требуют исправления после обработки: {len(manual)}; запрет бота: {len(exclusions)}",
+                           categories=after['categories'])
+            else:
                 self.event("dry_run_verification", "Очистка категорий не оценивается в режиме проверки")
+                if manual:
+                    self.event('manual_issues', f'Требуют ручного исправления: {len(manual)}')
             result_report = report(self.store, self.slug, config)
             self.store.set_state(self.slug + ":worker_error", None)
         except Controlled as exc:

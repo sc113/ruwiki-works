@@ -176,7 +176,7 @@ def test_unified_console_is_public_but_hides_diagnostics_on_both_endpoints(setti
         assert 'PRIVATE_DIAGNOSTICS' not in response.get_data(as_text=True)
         if path.startswith('/runs'):
             assert run_id in response.get_data(as_text=True)
-    assert 'Работы бота' in client.get('/').get_data(as_text=True)
+    assert 'Выполнение и логи' in client.get('/').get_data(as_text=True)
 
 
 def test_console_collects_all_actions_and_filter_keeps_run_links(settings, store):

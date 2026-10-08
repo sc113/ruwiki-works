@@ -274,19 +274,87 @@ def test_dry_run_has_full_proposals_but_no_fake_cleanup_errors(settings, store, 
     assert run['status'] == 'success' and run['dry_run']
     assert json.loads(run['summary'])['proposed'] == 1
     assert not wiki.edits and report(store, DATES)['problems'] == 0
-    assert store.get_state(DATES + ':result') is None
+    assert store.get_state(DATES + ':result')['verification'] is False
 
 
-@pytest.mark.parametrize('reason,text', [('bot-excluded', '{{nobots}}{{проверить факты}}'),
-                                      ('editconflict', '{{проверить факты}}')])
-def test_article_error_is_public_manual_issue_with_no_save(settings, store, reason, text):
+def test_article_error_is_public_manual_issue_with_no_save(settings, store):
     settings.wiki_write = True
     configure(store, DATES)
-    wiki = MaintenanceWiki(['Текст', text])
-    wiki.conflict = reason == 'editconflict'
+    wiki = MaintenanceWiki(['Текст', '{{проверить факты}}'])
+    wiki.conflict = True
     MaintenanceWorker(settings, store, DATES, wiki).execute(queued(store, DATES))
     assert not wiki.edits and report(store, DATES)['problems'] == 1
-    assert any(e.get('error') == reason for e in json.loads(store.list_runs(processor=DATES)[0]['events']))
+    assert any(e.get('error') == 'editconflict' for e in json.loads(store.list_runs(processor=DATES)[0]['events']))
+
+
+@pytest.mark.parametrize('slug,text', [(DATES, '{{проверить факты|дата=2020-01-01}}'),
+                                     (RQ, '{{rq}}'),
+                                     ('maintenance-rq-unwrap', '{{Rq|{{Нет источников}}|topic=X}}')])
+def test_dry_run_records_only_unprocessable_articles_as_manual_issues(settings, store, slug, text):
+    configure(store, slug)
+    MaintenanceWorker(settings, store, slug, MaintenanceWiki([text])).execute(queued(store, slug))
+    run = store.list_runs(processor=slug)[0]
+    assert run['dry_run'] and run['status'] == 'failed'
+    assert report(store, slug)['problems'] == 1
+    assert json.loads(run['summary'])['errors'] == 0
+    client = create_app(settings, store).test_client()
+    assert 'Пример' in client.get('/tasks/' + slug, follow_redirects=True).get_data(as_text=True)
+    public = client.get('/runs/' + run['id'] + '/log.json').get_json()
+    assert any(event['message'] == 'Требует исправления' for event in public['events'])
+
+
+@pytest.mark.parametrize('slug', [DATES, RQ, 'maintenance-rq-unwrap'])
+@pytest.mark.parametrize('write', [False, True])
+@pytest.mark.parametrize('block', ['{{nobots}}', '{{bots|deny=all}}'])
+def test_bot_exclusions_are_visible_skips_and_never_manual_errors(settings, store, slug, write, block):
+    settings.wiki_write = write
+    configure(store, slug)
+    wiki = MaintenanceWiki([block + '{{Rq|check}}{{проверить факты}}'])
+    MaintenanceWorker(settings, store, slug, wiki).execute(queued(store, slug))
+    run = store.list_runs(processor=slug)[0]
+    result = report(store, slug)
+    assert run['status'] == 'success' and not wiki.edits
+    assert result['problems'] == 0 and result['to_process'] == 0
+    assert result['pages'] == 1 and result['skipped'] == 1
+    assert result['excluded'][0]['title'] == 'Пример'
+    assert json.loads(run['summary'])['errors'] == 0
+    client = create_app(settings, store).test_client()
+    html = client.get('/processors/maintenance?task=' + slug + '&view=pending').get_data(as_text=True)
+    assert 'Запрет бота' in html and 'Остались только страницы с запретом бота' in html
+    events = client.get('/runs/' + run['id'] + '/log.json').get_json()['events']
+    assert len(events) == 1 and events[0]['message'] == 'Пропущено'
+    wiki.fail_monitor = False
+    wiki.category_members = lambda *args, **kwargs: []
+    refresh_inventory(wiki, store, slug)
+    assert not report(store, slug)['excluded']
+
+
+def test_dry_run_reports_a_missing_date_even_when_another_template_can_be_updated(settings, store, monkeypatch):
+    configure(store, DATES)
+    wiki = MaintenanceWiki(['{{Проверить факты}}{{Нет источников}}'])
+    fetch = wiki.fetch
+    def with_two_templates(title):
+        return Revision(title, 1, 1, '{{Категория к ежемесячной очистке|Проверить факты|Нет источников}}') if title.startswith('Категория:') else fetch(title)
+    wiki.fetch = with_two_templates
+    monkeypatch.setattr(History, 'find', lambda self, aliases, *a, **kw:
+                        dict(date='2020-01-01', revision=1) if 'Проверить факты' in aliases else None)
+    MaintenanceWorker(settings, store, DATES, wiki).execute(queued(store, DATES))
+    run = store.list_runs(processor=DATES)[0]
+    assert run['status'] == 'failed' and json.loads(run['summary'])['proposed'] == 1
+    assert report(store, DATES)['problems'] == 1
+    assert 'Нет источников' in report(store, DATES)['manual'][0]['reason']
+    assert not wiki.edits
+
+
+def test_remaining_article_outside_start_prefix_is_checked_for_bot_exclusion(settings, store):
+    settings.wiki_write = True
+    configure(store, RQ, rq_start_prefix='ZZ')
+    wiki = MaintenanceWiki(['{{nobots}}{{Rq|check}}'])
+    members = wiki.category_members
+    wiki.category_members = lambda *a, **kw: [] if kw.get('start_prefix') else members(*a, **kw)
+    MaintenanceWorker(settings, store, RQ, wiki).execute(queued(store, RQ))
+    assert store.list_runs(processor=RQ)[0]['status'] == 'success' and not wiki.edits
+    assert report(store, RQ)['skipped'] == 1 and report(store, RQ)['problems'] == 0
 
 
 @pytest.mark.parametrize('action,status,pending', [('pause', 'paused', 1), ('stop', 'stopped', 0), ('restart', 'interrupted', 1)])
