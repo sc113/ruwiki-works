@@ -105,6 +105,25 @@ def test_forged_or_expired_oauth_callback_cannot_login(client, store):
         assert "username" not in session
 
 
+@pytest.mark.parametrize("configured,verified", [("admin", "OtherUser"), ("admin", "Admin"),
+                                                ("admin", None), ("", "admin")])
+def test_oauth_rejects_non_admin_identity_and_clears_previous_session(settings, store, configured, verified):
+    settings.admin_username = configured
+    client = create_app(settings, store).test_client()
+    with client.session_transaction() as session:
+        session["username"] = "admin"
+        session["oauth_pending"] = "pending"
+    store.set_state("oauth:pending", {"key": "request-key", "secret": "secret", "expires": time.time() + 600})
+    with patch("toolforge_app.web.mwoauth.complete", return_value=mwoauth.AccessToken("access", "secret")), \
+         patch("toolforge_app.web.mwoauth.identify", return_value={"username": verified}):
+        result = client.get("/oauth/callback?oauth_token=request-key&oauth_verifier=verified", follow_redirects=True)
+    assert "Вход доступен только администратору" in result.get_data(as_text=True)
+    with client.session_transaction() as session:
+        assert "username" not in session
+    assert client.get("/notifications").status_code == 403
+    assert store.get_state("oauth:pending") is None
+
+
 def test_csv_does_not_execute_heading_as_spreadsheet_formula(client, store, wiki):
     store.save_page(wiki.title, issues=dump([{"type": "no_itog", "line": 3,
         "title": '+HYPERLINK("https://example.org")'}]))
@@ -129,11 +148,13 @@ def test_public_layout_is_minimal_and_admin_layout_keeps_full_controls(client):
         assert 'class="summary-bar"' not in html
         assert 'class="stat-card"' not in html
         assert 'class="task-controls"' not in html
+        assert 'href="/login"' not in html
     set_session(client, "admin")
     for path in ("/", "/processors/obkat"):
         html = client.get(path).get_data(as_text=True)
         assert 'class="summary-bar"' not in html
         assert 'class="task-controls"' in html
+        assert 'action="/logout"' in html
 
 
 def test_public_log_is_continuous_escaped_text_and_can_be_downloaded(client, store):

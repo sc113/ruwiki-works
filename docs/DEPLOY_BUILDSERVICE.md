@@ -76,7 +76,7 @@ toolforge webservice --mount all --health-check-path /healthz buildservice start
 toolforge webservice buildservice logs -f
 ```
 
-Проверить сайт и `/healthz`. Зарегистрировать на Meta [OAuth 1.0a consumer для входа](https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose) с callback `https://ruwiki-works.toolforge.org/oauth/callback`. Запрашивается подтверждение личности; править от имени посетителя сайт не должен. Consumer входа и BotPassword исполнителя — разные учётные данные. [Правила OAuth](https://meta.wikimedia.org/wiki/OAuth_app_guidelines).
+Проверить сайт и `/healthz`. Зарегистрировать на Meta [OAuth 1.0a consumer для входа](https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose) с callback `https://ruwiki-works.toolforge.org/oauth/callback`. Отметить «Allow consumer to specify a callback in requests and use callback URL above as a required prefix». Запрашивается только подтверждение личности; править от имени посетителя сайт не должен. Consumer входа и BotPassword исполнителя — разные учётные данные. [Правила OAuth](https://meta.wikimedia.org/wiki/OAuth_app_guidelines).
 
 ```bash
 toolforge envvars create TOOLFORGE_OAUTH_KEY
@@ -84,7 +84,7 @@ toolforge envvars create TOOLFORGE_OAUTH_SECRET
 toolforge webservice restart
 ```
 
-Проверить вход через Wikimedia OAuth и доступ admin для настроенной учётной записи. Публичный пользователь видит отчёты и сокращённые журналы.
+Открыть `/login` напрямую и проверить вход через Wikimedia OAuth для настроенной учётной записи admin. Кнопка входа в публичном интерфейсе отсутствует; другим учётным записям авторизация недоступна. Публичный пользователь видит отчёты и сокращённые журналы.
 
 В `deploy/jobs.buildservice.yaml.example` заменить `TOOL_NAME` на выбранное имя; сохранить как `jobs.yaml` в каталоге инструмента:
 

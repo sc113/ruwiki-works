@@ -39,12 +39,11 @@
       {% if preview_admin %}
         <span class="avatar">{{ username[0] }}</span><span title="Предпросмотр admin">{{ username }}<small>Только просмотр</small></span>
         <form action="{{ url_for('change_preview') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="mode" value="public"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="text-button preview-switch" type="submit">Публичный вид</button></form>
-      {% elif username %}
+      {% elif is_admin %}
         <span class="avatar">{{ username[0] }}</span><span>{{ username }}{% if is_admin %}<small>Администратор</small>{% endif %}</span>
         <form action="{{ url_for('logout') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="text-button" type="submit">Выйти</button></form>
       {% else %}
         {% if preview_enabled %}<form action="{{ url_for('change_preview') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="mode" value="admin"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="text-button preview-switch" type="submit">{{ icon('user') }} Режим admin</button></form>{% endif %}
-        <a class="login-link" href="{{ url_for('login') }}" title="Вход через учётную запись Википедии">{{ icon('user') }} Войти</a>
       {% endif %}
       </div>
     </header>

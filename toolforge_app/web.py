@@ -589,6 +589,9 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             flash("Википедия не подтвердила вход. Попробуйте снова.")
             return redirect(url_for("index"))
         session.clear()
+        if not settings.admin_username or identity.get("username") != settings.admin_username:
+            flash("Вход доступен только администратору. Отчёты можно читать без входа.")
+            return redirect(url_for("index"))
         session["username"] = identity["username"]
         session.permanent = True
         return redirect(url_for("index"))
