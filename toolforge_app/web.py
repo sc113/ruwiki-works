@@ -25,6 +25,10 @@ from .processors.logs import public_run
 from .console import ACTIVITY, console_data, run_history, run_metrics
 from .schedules import save_schedule
 from .health import system_status, component_health
+from .connections import (ERRORS as CONNECTION_ERRORS, FIELDS as CONNECTION_FIELDS, RIGHTS,
+                          connection_summary, effective_settings, probe_bot, probe_oauth,
+                          record_check, save_credentials)
+from .wiki import WikiError
 
 STATUS_LABELS = {"success": "Завершён", "failed": "Ошибка", "running": "В работе", "interrupted": "Прерван",
                  "paused": "Приостановлен", "stopped": "Остановлен"}
@@ -56,7 +60,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
 
     def preview_return():
         target = request.form.get("next", "/")
-        if "\\" in target or not (target == "/" or target.startswith(("/?", "/processors/", "/runs/", "/console", "/notifications"))):
+        if "\\" in target or not (target == "/" or target.startswith(("/?", "/processors/", "/runs/", "/console", "/notifications", "/admin"))):
             abort(400)
         return target
 
@@ -69,7 +73,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             if mode not in {"admin", "public"}:
                 abort(400)
             target = preview_return()
-            if mode == 'public' and target.startswith('/notifications'):
+            if mode == 'public' and target.startswith(('/notifications', '/admin')):
                 target = '/'
             # This is a presentation preference, never an authenticated identity.
             session["admin_preview"] = mode == "admin"
@@ -91,6 +95,8 @@ def create_app(settings=None, store=None, *, admin_preview=False):
                 slug = kwargs.get("slug")
                 if slug in TASK_SLUGS:
                     return redirect(url_for("processor", slug=get_task(slug).processor, task=slug))
+                if request.endpoint in {'connection_save', 'connection_check'}:
+                    return redirect(url_for('connections_page'))
                 return redirect(url_for("processor", slug="obkat") if request.endpoint in {"request_run", "task_schedule"}
                                 or request.form.get("return_to") == "processor" else url_for("index"))
             if not authenticated_admin():
@@ -100,6 +106,12 @@ def create_app(settings=None, store=None, *, admin_preview=False):
 
     def full_logs():
         return preview_active() or authenticated_admin()
+
+    def credentials(name=None):
+        key = 'connection_settings_' + (name or 'all')
+        if key not in g:
+            setattr(g, key, effective_settings(settings, store, names=(name,) if name else None))
+        return getattr(g, key)
 
     def health():
         if 'system_health' not in g:
@@ -197,6 +209,76 @@ def create_app(settings=None, store=None, *, admin_preview=False):
     @app.route('/system/status-fragment')
     def system_fragment():
         return render_template('system_status.html')
+
+    @app.route('/admin')
+    @app.route('/admin/connections')
+    def connections_page():
+        if not full_logs():
+            if session.get('username'):
+                abort(403)
+            session['login_next'] = '/admin'
+            return redirect(url_for('login'))
+        connection_error = ''
+        try:
+            current = credentials()
+        except WikiError as exc:
+            current = settings
+            connection_error = CONNECTION_ERRORS[exc.code]
+        return render_template('connections.html',
+            module=Processor('connections', 'Подключения', 'Подключения', '', True),
+            connections=connection_summary(current, store), connection_error=connection_error,
+            bot_login=current.bot_login, rights=RIGHTS, database_kind=store.engine.dialect.name)
+
+    def check_connection(name, current):
+        # One shared cooldown across web instances prevents repeated login attempts.
+        with store.worker_lease(processor='connection-check') as renew:
+            if not renew:
+                abort(409, 'Проверка подключения уже выполняется.')
+            at = time.time()
+            if at - store.get_state('connection:last_attempt:' + name, 0) < 30:
+                abort(409, 'Подождите 30 секунд перед следующей проверкой подключения.')
+            store.set_state('connection:last_attempt:' + name, at)
+            result = (probe_bot if name == 'bot' else probe_oauth)(current)
+            record_check(current, store, name, result)
+        return result
+
+    @app.route('/admin/connections/<name>/check', methods=['POST'])
+    @admin_required
+    def connection_check(name):
+        if name not in CONNECTION_FIELDS:
+            abort(404)
+        try:
+            result = check_connection(name, credentials(name))
+            flash('Подключение проверено.' if result['verified'] else CONNECTION_ERRORS.get(result['code'], CONNECTION_ERRORS['api']))
+        except WikiError as exc:
+            flash(CONNECTION_ERRORS.get(exc.code, CONNECTION_ERRORS['api']))
+        return redirect(url_for('connections_page') + '#' + name)
+
+    @app.route('/admin/connections/<name>/save', methods=['POST'])
+    @admin_required
+    def connection_save(name):
+        if name not in CONNECTION_FIELDS:
+            abort(404)
+        fields = CONNECTION_FIELDS[name]
+        values = {field: request.form.get(field, '').strip() for field in fields}
+        if any(not value or len(value) > 256 or any(c in value for c in '\r\n\x00') for value in values.values()):
+            flash('Заполните оба поля. Введите данные без переносов строк.')
+            return redirect(url_for('connections_page') + '#' + name)
+        from dataclasses import replace
+        try:
+            current = credentials(name)
+        except WikiError:
+            current = settings
+        candidate = replace(current, **values)
+        result = check_connection(name, candidate)
+        if result['verified']:
+            save_credentials(settings, store, name, values)
+            flash('Данные сохранены. Новое подключение проверено; режим записи не изменён.')
+        else:
+            # Keep working credentials after a failed replacement. The receipt is
+            # scoped to the submitted candidate and is not mistaken for live status.
+            flash(CONNECTION_ERRORS.get(result['code'], CONNECTION_ERRORS['api']))
+        return redirect(url_for('connections_page') + '#' + name)
 
     @app.route('/notifications')
     def notifications_page():
@@ -557,13 +639,18 @@ def create_app(settings=None, store=None, *, admin_preview=False):
 
     @app.route("/login")
     def login():
-        if not settings.oauth_key or not settings.oauth_secret:
+        try:
+            current = credentials('oauth')
+        except WikiError:
+            flash(CONNECTION_ERRORS['credentials-unreadable'])
+            return redirect(url_for('index'))
+        if not current.oauth_key or not current.oauth_secret:
             flash("Вход через Википедию будет доступен после подключения OAuth на Toolforge.")
             return redirect(url_for("index"))
         store.prune_oauth_requests(time.time())
-        consumer = mwoauth.ConsumerToken(settings.oauth_key, settings.oauth_secret)
+        consumer = mwoauth.ConsumerToken(current.oauth_key, current.oauth_secret)
         try:
-            auth_url, token = mwoauth.initiate(settings.oauth_url, consumer,
+            auth_url, token = mwoauth.initiate(current.oauth_url, consumer,
                 callback=settings.public_url.rstrip("/") + url_for("oauth_callback"), user_agent=settings.user_agent)
         except Exception:
             flash("Не удалось связаться с сервисом входа Википедии. Попробуйте позднее.")
@@ -581,20 +668,23 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         if not pending or pending["expires"] < time.time() or not hmac.compare_digest(pending["key"], request.args.get("oauth_token", "")):
             abort(400, "Сеанс входа истёк. Начните вход заново.")
         try:
-            consumer = mwoauth.ConsumerToken(settings.oauth_key, settings.oauth_secret)
+            current = credentials('oauth')
+            consumer = mwoauth.ConsumerToken(current.oauth_key, current.oauth_secret)
             access = mwoauth.complete(settings.oauth_url, consumer,
                 mwoauth.RequestToken(pending["key"], pending["secret"]), request.query_string.decode("ascii"), user_agent=settings.user_agent)
             identity = mwoauth.identify(settings.oauth_url, consumer, access, user_agent=settings.user_agent)
         except Exception:
             flash("Википедия не подтвердила вход. Попробуйте снова.")
             return redirect(url_for("index"))
+        target = session.get('login_next', '/')
         session.clear()
         if not settings.admin_username or identity.get("username") != settings.admin_username:
             flash("Вход доступен только администратору. Отчёты можно читать без входа.")
             return redirect(url_for("index"))
         session["username"] = identity["username"]
         session.permanent = True
-        return redirect(url_for("index"))
+        record_check(current, store, 'oauth', dict(verified=True, code='', login_verified=True))
+        return redirect('/admin' if target == '/admin' else url_for("index"))
 
     @app.route("/logout", methods=["POST"])
     def logout():

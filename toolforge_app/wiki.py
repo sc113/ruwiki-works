@@ -21,7 +21,7 @@ class WikiError(RuntimeError):
 # Stop the pass instead of issuing the same failing request for every title.
 RUN_ERRORS = frozenset({
     "network", "edit-outcome-unknown", "maxlag", "ratelimited", "readonly",
-    "credentials-missing", "writes-disabled", "login-failed", "unexpected-bot-identity",
+    "credentials-missing", "credentials-unreadable", "writes-disabled", "login-failed", "unexpected-bot-identity",
     "assertuserfailed", "assertnameduserfailed", "assertbotfailed", "badtoken",
     "notloggedin", "blocked", "autoblocked", "permissiondenied", "writeapidenied",
 })
@@ -50,6 +50,7 @@ class Revision:
 class WikiClient:
     def __init__(self, settings, store=None):
         self.settings = settings
+        self.base_settings = settings
         self.store = store
         self.session = requests.Session()
         self.session.headers["User-Agent"] = settings.user_agent
@@ -279,6 +280,13 @@ class WikiClient:
     def login(self):
         if not self.settings.wiki_write:
             raise WikiError("writes-disabled")
+        if self.store:
+            from .connections import effective_settings
+            current = effective_settings(self.base_settings, self.store, names=('bot',))
+            if (current.bot_login, current.bot_password) != (self.settings.bot_login, self.settings.bot_password):
+                self.session.cookies.clear()
+                self.logged_in = False
+            self.settings = current
         if not self.settings.bot_login or not self.settings.bot_password or not self.settings.bot_username:
             raise WikiError("credentials-missing")
         if self.logged_in:

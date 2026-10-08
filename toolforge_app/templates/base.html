@@ -28,7 +28,7 @@
       <option value="{{ url_for('index') }}" {% if module.slug == 'overview' and request.endpoint != 'notifications_page' %}selected{% endif %}>Все задачи бота</option>
       {% for p in processors %}<option value="{{ url_for('processor', slug=p.slug) }}" {% if p.slug == module.slug %}selected{% endif %}>{{ p.title }}</option>{% endfor %}
       <option value="{{ url_for('work_console') }}" {% if module.slug == 'activity' %}selected{% endif %}>Запуски и консоль</option>
-      {% if is_admin %}<option value="{{ url_for('notifications_page') }}" {% if request.endpoint == 'notifications_page' %}selected{% endif %}>Уведомления</option>{% endif %}
+      {% if is_admin %}<option value="{{ url_for('notifications_page') }}" {% if request.endpoint == 'notifications_page' %}selected{% endif %}>Уведомления</option><option value="{{ url_for('connections_page') }}" {% if module.slug == 'connections' %}selected{% endif %}>Подключения</option>{% endif %}
     </select></label>
   </aside>
   <div class="workspace">
@@ -36,6 +36,7 @@
       <div class="breadcrumb">Разделы <span>/</span> <strong>{{ module.short_title }}</strong></div>
       <div class="account">
       <a class="console-link {% if module.slug == 'activity' %}current{% endif %}" href="{{ url_for('work_console') }}" {% if module.slug == 'activity' %}aria-current="page"{% endif %}>{{ icon('console') }}Запуски и консоль</a>
+      {% if is_admin %}<a class="console-link {% if module.slug == 'connections' %}current{% endif %}" href="{{ url_for('connections_page') }}" {% if module.slug == 'connections' %}aria-current="page"{% endif %}>{{ icon('connections') }}Подключения</a>{% endif %}
       {% if preview_admin %}
         <span class="avatar">{{ username[0] }}</span><span title="Предпросмотр admin">{{ username }}<small>Только просмотр</small></span>
         <form action="{{ url_for('change_preview') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="mode" value="public"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="text-button preview-switch" type="submit">Публичный вид</button></form>

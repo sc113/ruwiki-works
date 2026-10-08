@@ -53,6 +53,10 @@ def main():
     commands.add_parser("init-db")
     check = commands.add_parser('check-health', help='Read-only health probe for background jobs')
     check.add_argument('component', choices=('executor', 'monitor'))
+    connection = commands.add_parser('check-connection', help='Read-only authentication check; never enables wiki writes')
+    connection.add_argument('name', choices=('bot', 'oauth'))
+    clear = commands.add_parser('clear-connection', help='Remove a web-saved override and use server environment credentials')
+    clear.add_argument('name', choices=('bot', 'oauth'))
     worker = commands.add_parser("worker")
     worker.add_argument("--once", action="store_true")
     worker.add_argument("--task", choices=("all", "monitor", "obkat", *TASK_SLUGS, *TRANSLATION_TASKS, *SECTION_TASKS, "maintenance-monitor", "translations-monitor", "sections-monitor"), default="all")
@@ -70,7 +74,23 @@ def main():
     args = parser.parse_args()
     settings = Settings.from_env()
     store = Store(settings.database_url)
-    if args.command == 'check-health':
+    if args.command == 'clear-connection':
+        store.clear_connection_secret(args.name)
+        store.pop_state('connection:' + args.name)
+        print('Saved override removed. Server environment credentials will be used; wiki write mode unchanged.')
+    elif args.command == 'check-connection':
+        from .connections import effective_settings, probe_bot, probe_oauth, record_check
+        from .wiki import WikiError
+        import json
+        try:
+            current = effective_settings(settings, store)
+            result = (probe_bot if args.name == 'bot' else probe_oauth)(current)
+            record_check(current, store, args.name, result)
+        except WikiError as exc:
+            result = dict(verified=False, code=exc.code)
+        print(json.dumps(result))
+        raise SystemExit(0 if result['verified'] else 1)
+    elif args.command == 'check-health':
         from .health import component_health
         state = component_health(settings, store, args.component)
         print(args.component + ': ' + ('ok' if state['online'] else 'unavailable'))

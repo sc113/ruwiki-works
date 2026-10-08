@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% from 'icons.html' import icon %}
+{% block title %}Подключения{% endblock %}
+{% block content %}
+<div class="page-heading"><div class="title-row"><span class="page-task-icon">{{ icon('connections') }}</span><h1>Подключения</h1></div></div>
+{% if connection_error %}<p class="notice" role="alert">{{ connection_error }}</p>{% endif %}
+<div class="connection-services" aria-label="Состояние системы">
+  <div><span>База данных</span><strong class="connection-success">На связи</strong><small>{{ 'ToolsDB' if database_kind == 'mysql' else 'SQLite' }}</small></div>
+  {% for key, component in system_health.components.items() %}<div><span>{{ component.name }}</span><strong class="{{ 'connection-success' if component.online else 'connection-pending' }}">{{ 'На связи' if component.online else 'Нет свежего сигнала' if component.at else 'Не запущен' }}</strong><small>{{ component.at|localtime }}</small></div>{% endfor %}
+  <div><span>Запись в Википедию</span><strong class="{{ 'connection-success' if settings.wiki_write else 'connection-pending' }}">{{ 'Разрешена' if settings.wiki_write else 'Выключена' }}</strong><small>Режим выполнения задач</small></div>
+</div>
+<section class="connection-panel" id="bot" aria-labelledby="bot-heading">
+  <div class="connection-heading"><div><h2 id="bot-heading">Учётная запись бота</h2><p>Авторизация фоновых задач в Википедии</p></div><span class="connection-state connection-{{ connections.bot.status }}">{{ 'Подключён' if connections.bot.status == 'success' else 'Ошибка проверки' if connections.bot.status == 'error' else 'Ожидает проверки' if connections.bot.configured else 'Не настроено' }}</span></div>
+  <div class="connection-content">
+    <div class="connection-details"><dl><div><dt>Учётная запись</dt><dd>{{ settings.bot_username or 'Не задана на сервере' }}</dd></div><div><dt>Последняя проверка</dt><dd>{{ connections.bot.check.at|default(0)|localtime }}</dd></div></dl>
+      {% if connections.bot.message %}<p class="connection-error" role="status">{{ connections.bot.message }}</p>{% endif %}
+      {% if connections.bot.check.checks %}<ul class="connection-checks">{% for right, label in rights.items() %}<li class="{{ 'connection-success' if connections.bot.check.checks[right] else 'connection-error' }}"><span aria-hidden="true">{{ '✓' if connections.bot.check.checks[right] else '!' }}</span>{{ label }}</li>{% endfor %}</ul>{% endif %}
+      <div class="connection-actions"><form action="{{ url_for('connection_check', name='bot') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="button secondary" {% if preview_admin or not connections.bot.configured %}disabled{% endif %}>{{ icon('restart') }}Проверить подключение</button></form><a href="https://ru.wikipedia.org/wiki/Служебная:BotPasswords" target="_blank" rel="noopener noreferrer">Создать или изменить BotPassword ↗</a></div>
+    </div>
+    <details class="connection-editor"><summary>{{ icon('settings') }}{{ 'Заменить учётные данные' if connections.bot.configured else 'Ввести учётные данные' }}{{ icon('chevron') }}</summary>
+      <form action="{{ url_for('connection_save', name='bot') }}" method="post" autocomplete="off"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <label>Логин BotPassword<input name="bot_login" value="{{ bot_login }}" placeholder="BOT_ACCOUNT@PASSWORD_NAME" required maxlength="256" autocomplete="off" {% if preview_admin %}disabled{% endif %}></label>
+        <label>Пароль BotPassword<input name="bot_password" type="password" required maxlength="256" autocomplete="new-password" {% if preview_admin %}disabled{% endif %}></label>
+        <p class="connection-note">Создайте пароль под учёткой бота: редактирование существующих страниц и массовые действия (флаг бота). Проверка выполняет только вход и запрос прав.</p>
+        <button class="button primary" {% if preview_admin %}disabled{% endif %}>{{ icon('save') }}Проверить и сохранить</button>
+      </form>
+    </details>
+  </div>
+</section>
+<section class="connection-panel" id="oauth" aria-labelledby="oauth-heading">
+  <div class="connection-heading"><div><h2 id="oauth-heading">Вход admin через Wikimedia OAuth</h2><p>Подтверждение личности для управления сайтом</p></div><span class="connection-state connection-{{ connections.oauth.status }}">{{ 'Проверено' if connections.oauth.status == 'success' else 'Ошибка проверки' if connections.oauth.status == 'error' else 'Настроено' if connections.oauth.configured else 'Не настроено' }}</span></div>
+  <div class="connection-content"><div class="connection-details"><dl><div><dt>Учётная запись admin</dt><dd>{{ settings.admin_username or 'Не задана на сервере' }}</dd></div><div><dt>Последняя проверка</dt><dd>{{ connections.oauth.check.at|default(0)|localtime }}</dd></div><div><dt>Callback URL</dt><dd><code>{{ settings.public_url.rstrip('/') }}/oauth/callback</code></dd></div></dl>
+      {% if connections.oauth.message %}<p class="connection-error" role="status">{{ connections.oauth.message }}</p>{% endif %}
+      <div class="connection-actions"><form action="{{ url_for('connection_check', name='oauth') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="button secondary" {% if preview_admin or not connections.oauth.configured %}disabled{% endif %}>{{ icon('restart') }}Проверить OAuth</button></form><a href="https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration" target="_blank" rel="noopener noreferrer">Управление OAuth-приложением ↗</a></div>
+    </div>
+    <details class="connection-editor"><summary>{{ icon('settings') }}Заменить consumer tokens{{ icon('chevron') }}</summary><form action="{{ url_for('connection_save', name='oauth') }}" method="post" autocomplete="off"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <label>Consumer token<input name="oauth_key" type="password" required maxlength="256" autocomplete="new-password" {% if preview_admin %}disabled{% endif %}></label>
+      <label>Secret token<input name="oauth_secret" type="password" required maxlength="256" autocomplete="new-password" {% if preview_admin %}disabled{% endif %}></label>
+      <p class="connection-note">Разрешение — только подтверждение личности. В регистрации разрешите callback в запросах с указанным URL как обязательным префиксом.</p>
+      <button class="button primary" {% if preview_admin %}disabled{% endif %}>{{ icon('save') }}Проверить и сохранить</button>
+    </form></details>
+  </div>
+</section>
+<p class="connection-note">Сохранённые пароли и tokens не отображаются. Изменения применяются к новым подключениям фоновых задач и сайта без перезапуска. Проверки не включают запись в Википедию.</p>
+{% endblock %}

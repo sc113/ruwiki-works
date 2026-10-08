@@ -51,6 +51,9 @@ runs = Table("runs", metadata,
 state = Table("state", metadata,
     Column("key", String(80), primary_key=True),
     Column("value", large_text, nullable=False))
+connection_secrets = Table("connection_secrets", metadata,
+    Column("name", String(32), primary_key=True),
+    Column("encrypted", Text, nullable=False))
 article_checks = Table("article_checks", metadata,
     Column("processor", String(32), primary_key=True),
     # Hash titles so ToolsDB's default case-insensitive collation cannot merge them.
@@ -226,6 +229,22 @@ class Store:
                 except IntegrityError:
                     # The observer and executor can initialize the same state.
                     conn.execute(update(state).where(state.c.key == key).values(value=dump(value)))
+
+    def connection_secret(self, name):
+        with self.engine.connect() as conn:
+            return conn.execute(select(connection_secrets.c.encrypted).where(
+                connection_secrets.c.name == name)).scalar()
+
+    def save_connection_secret(self, name, encrypted):
+        with self.engine.begin() as conn:
+            if conn.execute(select(connection_secrets.c.name).where(connection_secrets.c.name == name)).first():
+                conn.execute(update(connection_secrets).where(connection_secrets.c.name == name).values(encrypted=encrypted))
+            else:
+                conn.execute(insert(connection_secrets).values(name=name, encrypted=encrypted))
+
+    def clear_connection_secret(self, name):
+        with self.engine.begin() as conn:
+            conn.execute(delete(connection_secrets).where(connection_secrets.c.name == name))
 
     def page(self, title):
         with self.engine.connect() as conn:

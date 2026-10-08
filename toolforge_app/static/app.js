@@ -7,6 +7,13 @@ document.addEventListener('input', (event) => {
 });
 document.addEventListener("submit", (event) => {
   const form = event.target;
+  if (form.closest('.connection-panel')) {
+    submittingCommand = true;
+    const button = form.querySelector('button');
+    button.disabled = true;
+    button.textContent = 'Проверяем подключение…';
+    return;
+  }
   if (!form.closest(".admin-panel, .task-controls, .schedule-form, .article-retry, .notification-form")) return;
   submittingCommand = true;
   const button = form.querySelector("button");
