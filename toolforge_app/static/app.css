@@ -1895,7 +1895,7 @@ select {
 .run-task { display: flex; align-items: flex-start; gap: 7px; color: var(--text); font-size: 15px; font-weight: 500; }
 .run-task .icon { width: 17px; height: 17px; margin-top: 3px; color: var(--accent); flex-shrink: 0; }
 .run-module, .run-mode { color: var(--muted); }
-.run-mode { margin-left: 5px; }
+.runs-table .badge { white-space: nowrap; }
 .runs-table .run-counts { gap: 2px 12px; }
 .runs-table .run-count strong { font-size: 15px; }
 .run-duration { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--body); }
