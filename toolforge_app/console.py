@@ -8,7 +8,7 @@ from .run_statistics import public_summary
 from .execution import ready_jobs
 
 
-ACTIVITY = Processor("activity", "Запуски и консоль", "Запуски и консоль", "История всех работ", True)
+ACTIVITY = Processor("activity", "Работы бота", "Работы бота", "История всех работ", True)
 
 
 def decode_run(run):
@@ -69,39 +69,57 @@ def run_history(store, selected="", *, page=1, limit=25, started_from=None, star
     return dict(entries=entries, has_next=len(rows) > limit, page=page)
 
 
-def console_data(store, selected="", *, full=True, page=1, started_from=None, started_until=None, status=None):
-    recent = store.list_runs(15, processor=selected or None, exclude_import=True,
-                            started_from=started_from, started_until=started_until, status=status)
-    events = []
-    for run in recent:
-        task = get_task(run["processor"])
-        if not task:
-            continue
-        run = decode_run(run)
-        if full:
-            visible = run["events"]
-        else:
-            projected = public_run(run)
-            visible = [dict(at=run["started_at"], code="started", message="Начало обработки")]
-            for event in projected["events"]:
-                if event["code"] in {"edited", "table_edited"}:
-                    visible.append({key: event[key] for key in ("at", "code", "message", "title")})
-            if run["finished_at"]:
-                labels = {"success": "Обработка завершена", "failed": "Обработка завершена с ошибкой",
-                          "paused": "Обработка приостановлена", "stopped": "Обработка остановлена",
-                          "interrupted": "Обработка прервана"}
-                visible.append(dict(at=run["finished_at"], code="finished",
-                                    message=labels.get(run["status"], "Обработка завершена")))
-        for index, event in enumerate(visible):
-            details = {key: value for key, value in event.items() if key not in {"at", "code", "message", "title", "error"}}
-            events.append(dict(at=event["at"], code=event["code"], message=event["message"],
-                title=event.get("title", ""), error=event.get("error"), run_id=run["id"],
-                task=task, index=index, details=json.dumps(details, ensure_ascii=False, indent=2) if full and details else ""))
-    return dict(events=sorted(events, key=lambda event: (event["at"], event["run_id"], event["index"]))[-200:],
+def console_data(store, selected="", *, full=True, page=1, started_from=None, started_until=None, status=None, include_events=True):
+    events, has_more, offset = [], False, 0
+    needed = page * 200
+    # Walk archived runs until this event page is complete. No events disappear
+    # behind a fixed number of recent runs or a per-run truncation.
+    while include_events:
+        recent = store.list_runs(15, offset=offset, processor=selected or None, exclude_import=True,
+            started_from=started_from, started_until=started_until, status=status, overlap=True)
+        if not recent:
+            break
+        for row in recent:
+            task = get_task(row['processor'])
+            if not task:
+                continue
+            run = decode_run(row)
+            visible = run['events'] if full else public_run(run)['events']
+            for index, event in enumerate(visible):
+                if started_from is not None and event['at'] < started_from or started_until is not None and event['at'] >= started_until:
+                    continue
+                details = any(key not in {'at', 'code', 'message', 'title', 'error'} for key in event)
+                events.append(dict(at=event['at'], code=event['code'], message=event['message'],
+                    title=event.get('title', ''), error=event.get('error'), run_id=run['id'], task=task, index=index,
+                    tone=event.get('tone', 'error' if event['code'] == 'error' else 'success' if event['code'] in {'edited', 'table_edited'} else 'neutral'),
+                    details=bool(full and details)))
+            if len(events) > needed:
+                has_more = True
+                break
+        if has_more or len(recent) < 15:
+            break
+        offset += 15
+    ordered = sorted(events, key=lambda event: (event['at'], event['run_id'], event['index']), reverse=True)
+    page_events = ordered[(page - 1) * 200:needed]
+    return dict(events=list(reversed(page_events)), has_more=has_more,
                 history=run_history(store, selected, page=page, started_from=started_from, started_until=started_until, status=status),
-                waiting=[dict(job=job, task=get_task(job["processor"])) for job in ready_jobs(store, exclude_running=True)
-                         if not selected or job["processor"] == selected],
-                running=[dict(run=run, task=get_task(run["processor"])) for run in
-                         store.list_runs(20, processor=selected or None, exclude_import=True) if run["status"] == "running"],
-                online=time.time() - store.get_state("executor_heartbeat", 0) < 300,
+                waiting=[dict(job=job, task=get_task(job['processor'])) for job in ready_jobs(store, exclude_running=True)
+                         if not selected or job['processor'] == selected],
+                running=[dict(run=run, task=get_task(run['processor'])) for run in
+                         store.list_runs(20, processor=selected or None, exclude_import=True) if run['status'] == 'running'],
+                online=time.time() - store.get_state('executor_heartbeat', 0) < 300,
                 tasks=[task for task in TASKS if task.enabled])
+
+
+def grouped_queue(jobs):
+    groups = []
+    pages = [job for job in jobs if job['processor'] == 'obkat' and job['kind'] == 'page']
+    if pages:
+        groups.append(dict(task=get_task('obkat'), label='После правок', count=len(pages),
+            due_at=min(job['due_at'] for job in pages), latest=max(job['due_at'] for job in pages)))
+    for job in jobs:
+        if job in pages:
+            continue
+        groups.append(dict(task=get_task(job['processor']), label=None, job=job, count=1,
+                           due_at=job['due_at'], latest=job['due_at']))
+    return sorted(groups, key=lambda row: row['due_at'])

@@ -1,5 +1,5 @@
 {% from 'icons.html' import icon %}
 <section class="recent-runs" aria-labelledby="recent-runs-heading">
-  <div class="block-heading"><h2 id="recent-runs-heading">{{ icon('history', 'section-icon') }}Последние запуски</h2><a class="all-runs-link" href="{{ url_for('work_console') }}">Все запуски {{ icon('arrow-right') }}</a></div>
+  <div class="block-heading"><h2 id="recent-runs-heading">{{ icon('history', 'section-icon') }}Последние запуски</h2><a class="all-runs-link" href="{{ url_for('run_history_page') }}">Все запуски {{ icon('arrow-right') }}</a></div>
   {% with entries=recent.entries %}{% include 'run_table.html' %}{% endwith %}
 </section>

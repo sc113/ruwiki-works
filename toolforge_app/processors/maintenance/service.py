@@ -35,7 +35,7 @@ class MaintenanceWorker(DailyWorker):
         dry_run = not (self.settings.wiki_write and config["autosave"])
         self.generation = control["generation"]
         self.events = []
-        self.run_id = self.store.start_run(job["kind"], job["requested_by"], dry_run=dry_run, processor=self.slug)
+        self.run_id = self.store.start_run(job["kind"], job["requested_by"], dry_run=dry_run, processor=self.slug, job=job)
         summary = dict(checked=0, changed=0, proposed=0, skipped=0, errors=0, remaining=None)
         before_report = report_snapshot(report(self.store, self.slug, config))
         errors, notes_by_title, controlled, failed = {}, {}, None, False
@@ -45,6 +45,7 @@ class MaintenanceWorker(DailyWorker):
             if "section_templates" in config:
                 config["section_templates"] = load_sections(self.wiki, self.store, self.slug, config)
                 self.event("section_templates", f"Шаблонов для разделов: {len(config['section_templates'])}", templates=config["section_templates"])
+            self.event("scan", "Поиск статей для обработки")
             before = refresh_inventory(self.wiki, self.store, self.slug, config=config)
             self.event("inventory", f"Статей в категориях: {before['total']}", categories=before["categories"])
             allowed = set(before["articles"])
@@ -121,6 +122,7 @@ class MaintenanceWorker(DailyWorker):
                                diff_before=base.text, diff_after=text)
                 except WikiError as exc:
                     if exc.code in RUN_ERRORS:
+                        self.event('error', 'Не удалось обработать страницу', title=title, error=exc.code)
                         raise
                     summary["errors"] += 1
                     errors[title] = ERROR_LABELS.get(exc.code, "Ошибка обработки: " + exc.code)

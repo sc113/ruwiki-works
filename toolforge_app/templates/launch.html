@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block title %}Запуск задачи{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('processor', slug=task.processor, task=task.slug) }}">← К задаче</a>
+<div class="page-heading"><div><h1>{{ task.title }}</h1><p>{{ receipt.requested_at|localtime('%d.%m.%Y, %H:%M:%S') }} · МСК</p></div></div>
+<div id="live-launch" data-feed-url="{{ url_for('launch_fragment', request_id=receipt.id) }}">{% include 'launch_feed.html' %}</div>
+{% endblock %}

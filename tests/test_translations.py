@@ -171,7 +171,7 @@ def test_daily_dry_run_does_not_publish_unsaved_changes(settings, store):
     run = store.list_runs(processor=CATS)[0]
     assert json.loads(run['summary'])['proposed'] == 1
     text = create_app(settings, store).test_client().get('/runs/' + run['id'] + '/log.txt').get_data(as_text=True)
-    assert 'Сохранённых изменений' in text and 'Original title' not in text
+    assert 'Подготовлено без сохранения' in text and 'Original title' not in text
 
 
 def test_category_failure_is_remembered_independently_from_talk_action(settings, store):
@@ -432,7 +432,8 @@ def test_dry_recheck_does_not_clear_ledger_or_mark_unsaved_changes(settings, sto
     run = store.list_runs(processor=slug)[0]
     assert json.loads(run['summary'])['proposed'] == 1
     public = create_app(settings, store).test_client().get('/runs/' + run['id'] + '/log.json').get_json()
-    assert public['events'] == []
+    assert [event['code'] for event in public['events']] == ['would_edit']
+    assert 'changes' not in public['events'][0]
 
 
 def test_tsv_import_handles_padding_tabs_multiline_and_is_idempotent(tmp_path, store):

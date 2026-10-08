@@ -10,6 +10,7 @@ from .processors.sections import TASK_SLUGS as SECTION_TASKS
 from .processors.sections.service import SectionWorker, SectionMonitor
 from .health import system_status
 from .runtime import ObservationPaused, service_enabled
+from .execution import ready_jobs
 
 
 class Dispatcher:
@@ -26,7 +27,7 @@ class Dispatcher:
             if not renew:
                 return False
             self.store.set_state("executor_heartbeat", now)
-            if not service_enabled(self.store, 'executor'):
+            if not service_enabled(self.store, 'executor') and not ready_jobs(self.store, now):
                 system_status(self.settings, self.store)
                 return True
             def heartbeat():
@@ -35,9 +36,18 @@ class Dispatcher:
             # Queue every daily action before beginning the first one.
             for worker in [*self.maintenance, *self.translations, *self.sections]:
                 worker.schedule(now)
-            for worker in [self.obkat, *self.maintenance, *self.translations, *self.sections]:
-                if not service_enabled(self.store, 'executor'):
+            workers = [self.obkat, *self.maintenance, *self.translations, *self.sections]
+            requested = self.store.pending_run_requests()
+            manual_order = {job['processor']: index for index, job in reversed(list(enumerate(ready_jobs(self.store))))
+                            if job['key'] in requested}
+            workers.sort(key=lambda worker: manual_order.get('obkat' if worker is self.obkat else worker.slug, 1000))
+            for worker in workers:
+                if not service_enabled(self.store, 'executor') and not ready_jobs(self.store):
                     break
+                if not service_enabled(self.store, 'executor') and not any(
+                        job['processor'] == ('obkat' if worker is self.obkat else worker.slug)
+                        for job in ready_jobs(self.store)):
+                    continue
                 renew()
                 previous_renew = worker.outer_renew
                 worker.outer_renew = heartbeat

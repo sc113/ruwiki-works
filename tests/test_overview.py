@@ -19,7 +19,7 @@ def test_index_is_overview_and_import_is_not_presented_as_a_bot_run(settings, st
     response = create_app(settings, store).test_client().get("/")
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "Все задачи бота" in html
+    assert "Обзор" in html
     assert "Не запускалась" in html
     assert "Даты в шаблонах о проблемах" in html and "Замена параметров RQ" in html
     assert '/tasks/maintenance-dates' in html and '/tasks/maintenance-rq' in html

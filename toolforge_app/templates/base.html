@@ -13,10 +13,10 @@
 <body>
   <a class="skip-link" href="#main">Перейти к отчёту</a>
   <aside class="sidebar">
-    <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark">rw</span><span>ruwiki<br>works</span></a>
-    <a class="processor-link overview-nav {% if module.slug == 'overview' %}selected{% endif %}" href="{{ url_for('index') }}" {% if module.slug == 'overview' %}aria-current="page"{% endif %}>{{ icon('overview', 'nav-symbol') }}<span>Все задачи бота</span></a>
-    <div class="nav-label">РАЗДЕЛЫ</div>
-    <nav aria-label="Разделы" class="processor-nav">
+    <a class="brand" href="{{ url_for('index') }}"><span class="brand-mark" aria-hidden="true">rw</span><span class="brand-name">ruwiki <span>works</span></span></a>
+    <a class="processor-link overview-nav {% if module.slug == 'overview' %}selected{% endif %}" href="{{ url_for('index') }}" {% if module.slug == 'overview' %}aria-current="page"{% endif %}>{{ icon('overview', 'nav-symbol') }}<span>Обзор</span></a>
+    <div class="nav-label">ЗАДАЧИ БОТА</div>
+    <nav aria-label="Задачи бота" class="processor-nav">
       {% for p in processors %}
       <a href="{{ url_for('processor', slug=p.slug) }}" class="processor-link {% if p.slug == module.slug %}selected{% endif %}" {% if p.slug == module.slug %}aria-current="page"{% endif %}>
         {{ icon(p.slug, 'nav-symbol') }}
@@ -25,27 +25,24 @@
       {% endfor %}
     </nav>
     <label class="compact-nav"><span class="sr-only">Перейти в раздел</span><select data-section-nav aria-label="Текущий раздел">
-      <option value="{{ url_for('index') }}" {% if module.slug == 'overview' and request.endpoint != 'notifications_page' %}selected{% endif %}>Все задачи бота</option>
+      <option value="{{ url_for('index') }}" {% if module.slug == 'overview' and request.endpoint != 'notifications_page' %}selected{% endif %}>Обзор</option>
       {% for p in processors %}<option value="{{ url_for('processor', slug=p.slug) }}" {% if p.slug == module.slug %}selected{% endif %}>{{ p.title }}</option>{% endfor %}
-      <option value="{{ url_for('work_console') }}" {% if module.slug == 'activity' %}selected{% endif %}>Запуски и консоль</option>
-      {% if is_admin %}<option value="{{ url_for('notifications_page') }}" {% if request.endpoint == 'notifications_page' %}selected{% endif %}>Уведомления</option><option value="{{ url_for('connections_page') }}" {% if module.slug == 'connections' %}selected{% endif %}>Подключения</option>{% endif %}
+      <option value="{{ url_for('run_history_page') }}" {% if module.slug == 'activity' %}selected{% endif %}>Работы бота</option>
+      {% if is_admin %}<option value="{{ url_for('notifications_page') }}" {% if request.endpoint == 'notifications_page' %}selected{% endif %}>Уведомления</option>{% endif %}
     </select></label>
   </aside>
   <div class="workspace">
     <header class="topbar">
-      <div class="breadcrumb">Разделы <span>/</span> <strong>{{ module.short_title }}</strong></div>
+      <div class="breadcrumb">Задачи бота <span>/</span> <strong>{{ module.short_title }}</strong></div>
       <div class="account">
-      <a class="console-link {% if module.slug == 'activity' %}current{% endif %}" href="{{ url_for('work_console') }}" {% if module.slug == 'activity' %}aria-current="page"{% endif %}>{{ icon('console') }}Запуски и консоль</a>
-      {% if is_admin %}<a class="console-link {% if module.slug == 'connections' %}current{% endif %}" href="{{ url_for('connections_page') }}" {% if module.slug == 'connections' %}aria-current="page"{% endif %}>{{ icon('connections') }}Подключения</a>{% endif %}
-      {% if preview_admin %}
-        <span class="avatar">{{ username[0] }}</span><span title="Предпросмотр admin">{{ username }}<small>Только просмотр</small></span>
-        <form action="{{ url_for('change_preview') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="mode" value="public"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="text-button preview-switch" type="submit">Публичный вид</button></form>
-      {% elif is_admin %}
-        <span class="avatar">{{ username[0] }}</span><span>{{ username }}{% if is_admin %}<small>Администратор</small>{% endif %}</span>
-        <form action="{{ url_for('logout') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="text-button" type="submit">Выйти</button></form>
-      {% else %}
-        {% if preview_enabled %}<form action="{{ url_for('change_preview') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="mode" value="admin"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="text-button preview-switch" type="submit">{{ icon('user') }} Режим admin</button></form>{% endif %}
-      {% endif %}
+      <a class="console-link {% if module.slug == 'activity' %}current{% endif %}" href="{{ url_for('run_history_page') }}" {% if module.slug == 'activity' %}aria-current="page"{% endif %}>{{ icon('console') }}Работы бота</a>
+      {% if is_admin %}
+      <details class="profile-menu"><summary {% if preview_admin %}title="Предпросмотр admin"{% endif %}><span class="avatar">{{ username[0] }}</span><span>{{ username }}<small>{{ 'Только просмотр' if preview_admin else 'Администратор' }}</small></span>{{ icon('chevron') }}</summary>
+        <div class="profile-options"><a href="{{ url_for('profile_page') }}">{{ icon('settings') }}Настройки профиля</a><a href="{{ url_for('notifications_page') }}">{{ icon('bell') }}Уведомления</a>
+        {% if preview_admin %}<form action="{{ url_for('change_preview') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="mode" value="public"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="text-button preview-switch" type="submit">Публичный вид</button></form>
+        {% else %}<form action="{{ url_for('logout') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="text-button" type="submit">Выйти</button></form>{% endif %}</div>
+      </details>
+      {% elif preview_enabled %}<form action="{{ url_for('change_preview') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="mode" value="admin"><input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}"><button class="text-button preview-switch" type="submit">{{ icon('user') }} Режим admin</button></form>{% endif %}
       </div>
     </header>
     <main id="main">

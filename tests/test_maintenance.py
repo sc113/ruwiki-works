@@ -365,15 +365,19 @@ def test_all_public_log_formats_hide_diagnostics_but_show_changes(settings, stor
     assert result.status_code == 200
     text = result.get_data(as_text=True)
     assert 'PRIVATE_' not in text and 'SECRET_ERROR' not in text
-    assert 'Unchanged article' not in text and 'Failed article' not in text
+    assert 'Unchanged article' not in text and 'Failed article' in text
     # JSON escapes are parsed to test the same public content.
     if suffix == '/log.json':
-        assert result.get_json()['events'][0]['title'] == 'Обработанная статья'
+        assert [event['title'] for event in result.get_json()['events']] == ['Failed article', 'Обработанная статья']
     else:
         assert 'Обработанная статья' in text and 'Нет источников' in text and '2020-01-02' in text
     set_session(client, 'admin')
     admin = client.get('/runs/' + run_id + suffix).get_data(as_text=True)
-    assert 'PRIVATE_SETTING' in admin and 'PRIVATE_OLD_TEXT' in admin
+    if not suffix:
+        assert 'PRIVATE_DIAGNOSTIC' in admin
+        assert 'PRIVATE_OLD_TEXT' in client.get('/runs/' + run_id + '/events/3').get_data(as_text=True)
+    else:
+        assert 'PRIVATE_SETTING' in admin and 'PRIVATE_OLD_TEXT' in admin
 
 
 def test_obkat_export_cannot_bypass_private_maintenance_logs(settings, store):

@@ -21,7 +21,7 @@ document.addEventListener("submit", (event) => {
   if (button.classList.contains("icon-button")) {
     button.setAttribute("aria-label", "Сохраняем команду…");
   } else {
-    button.textContent = form.closest(".task-controls") ? "Сохраняем…" : "Добавляем в очередь…";
+    button.textContent = form.closest(".notification-form") ? "Отмечаем прочитанными…" : form.closest(".task-controls") ? "Сохраняем…" : "Запускаем…";
   }
 });
 document.querySelectorAll('[data-section-nav]').forEach((select) => {
@@ -57,6 +57,7 @@ document.addEventListener("click", (event) => {
   document.querySelectorAll(".export-menu[open]").forEach((menu) => {
     if (!menu.contains(event.target)) menu.open = false;
   });
+  document.querySelectorAll(".profile-menu[open]").forEach((menu) => { if (!menu.contains(event.target)) menu.open = false; });
   document.querySelectorAll(".help-disclosure[open]").forEach((help) => {
     if (!help.contains(event.target)) help.open = false;
   });
@@ -111,29 +112,53 @@ document.querySelectorAll('.live-processing').forEach((panel) => {
     finally { refreshing = false; }
   }, 3000);
 });
-const workConsole = document.getElementById('work-console');
-if (workConsole) {
-  const follow = document.getElementById('console-follow');
-  let requestNumber = 0;
+function followOutput(panel, previous) {
+  const output = panel.querySelector('.console-output');
+  if (!output) return;
+  output.scrollTop = previous && !previous.bottom ? previous.top : output.scrollHeight;
+}
+function liveJournal(panel, follow, refreshButton) {
+  if (!panel || !follow) return;
+  let refreshing = false;
+  let finished = panel.querySelector('[data-finished="true"]') !== null;
   const refresh = async (force = false) => {
-    if (!force && (!follow.checked || document.hidden || window.getSelection()?.toString() || workConsole.querySelector('details[open]') || workConsole.contains(document.activeElement))) return;
-    const number = ++requestNumber;
+    if (refreshing || !force && (finished || !follow.checked || document.hidden || window.getSelection()?.toString() || panel.querySelector('details[open]'))) return;
+    refreshing = true;
+    const old = panel.querySelector('.console-output');
+    const position = old && {top: old.scrollTop, bottom: old.scrollHeight - old.scrollTop - old.clientHeight < 60};
     try {
-      const response = await fetch(workConsole.dataset.feedUrl, {cache: 'no-store'});
-      if (response.ok && number === requestNumber) {
-        workConsole.innerHTML = await response.text();
-        if (follow.checked) {
-          const output = workConsole.querySelector('.console-output');
-          output.scrollTop = output.scrollHeight;
-        }
+      const response = await fetch(panel.dataset.feedUrl, {cache: 'no-store'});
+      if (response.ok) {
+        panel.innerHTML = await response.text();
+        finished = panel.querySelector('[data-finished="true"]') !== null;
+        if (follow.checked) followOutput(panel, position);
       }
-    } catch { /* Preserve the current console contents. */ }
+    } catch { /* Preserve the last confirmed journal. */ }
+    finally { refreshing = false; }
   };
-  setInterval(() => refresh(), 3000);
+  setInterval(() => refresh(), 2000);
   follow.addEventListener('change', () => refresh(true));
-  document.getElementById('console-refresh').addEventListener('click', () => refresh(true));
-  const output = workConsole.querySelector('.console-output');
-  output.scrollTop = output.scrollHeight;
+  refreshButton?.addEventListener('click', () => refresh(true));
+  followOutput(panel);
+}
+liveJournal(document.getElementById('work-console'), document.getElementById('console-follow'), document.getElementById('console-refresh'));
+liveJournal(document.getElementById('live-run'), document.getElementById('run-follow'));
+const liveLaunch = document.getElementById('live-launch');
+if (liveLaunch) {
+  let refreshing = false;
+  setInterval(async () => {
+    if (refreshing || document.hidden) return;
+    refreshing = true;
+    try {
+      const response = await fetch(liveLaunch.dataset.feedUrl, {cache: 'no-store'});
+      if (response.ok) {
+        liveLaunch.innerHTML = await response.text();
+        const destination = liveLaunch.querySelector('[data-run-url]')?.dataset.runUrl;
+        if (destination) location.replace(destination);
+      }
+    } catch { /* Keep the request page during a temporary disconnect. */ }
+    finally { refreshing = false; }
+  }, 1000);
 }
 document.querySelectorAll('.activity-filters select, .activity-filters input[type="date"]').forEach((field) => {
   field.addEventListener('change', () => field.form.requestSubmit());
@@ -177,3 +202,17 @@ if (overview) {
     }
   }, 15000);
 }
+
+document.addEventListener('toggle', async (event) => {
+  const details = event.target;
+  if (!details.matches?.('details[data-event-url]') || !details.open || details.dataset.loaded || details.dataset.loading) return;
+  details.dataset.loading = 'true';
+  try {
+    const response = await fetch(details.dataset.eventUrl, {cache: 'no-store'});
+    if (response.ok) {
+      details.querySelector('pre').textContent = await response.text();
+      details.dataset.loaded = 'true';
+    } else details.querySelector('pre').textContent = 'Не удалось открыть подробности. Обновите страницу.';
+  } catch { details.querySelector('pre').textContent = 'Нет связи. Закройте и откройте подробности для повтора.'; }
+  finally { delete details.dataset.loading; }
+}, true);

@@ -5,7 +5,7 @@ import time
 import uuid
 from contextlib import contextmanager
 
-from sqlalchemy import (Boolean, Column, Float, Integer, MetaData, String, Table,
+from sqlalchemy import (Boolean, Column, Float, Integer, MetaData, String, Table, or_,
                         Text, create_engine, delete, insert, select, update)
 from sqlalchemy.dialects.mysql import DOUBLE, LONGTEXT
 from sqlalchemy.exc import IntegrityError
@@ -54,6 +54,12 @@ state = Table("state", metadata,
 connection_secrets = Table("connection_secrets", metadata,
     Column("name", String(32), primary_key=True),
     Column("encrypted", Text, nullable=False))
+run_requests = Table("run_requests", metadata,
+    Column("id", String(32), primary_key=True),
+    Column("processor", String(32), nullable=False),
+    Column("job_key", String(255), nullable=False, unique=True),
+    Column("requested_at", epoch_time, nullable=False),
+    Column("run_id", String(32)))
 article_checks = Table("article_checks", metadata,
     Column("processor", String(32), primary_key=True),
     # Hash titles so ToolsDB's default case-insensitive collation cannot merge them.
@@ -218,6 +224,11 @@ class Store:
             return conn.execute(update(notifications).where(notifications.c.id == notification_id,
                 notifications.c.read_at.is_(None)).values(read_at=now)).rowcount
 
+    def read_all_notifications(self, now):
+        with self.engine.begin() as conn:
+            return conn.execute(update(notifications).where(
+                notifications.c.read_at.is_(None)).values(read_at=now)).rowcount
+
     def set_state(self, key, value):
         with self.engine.begin() as conn:
             if conn.execute(select(state.c.key).where(state.c.key == key)).first():
@@ -380,6 +391,46 @@ class Store:
                 statement = statement.where(jobs.c.processor == processor)
             return [dict(r) for r in conn.execute(statement.order_by(jobs.c.due_at)).mappings()]
 
+    def request_run(self, processor, requested_by, *, kind='full', spacing=False):
+        """Deduplicate repeated clicks and retain a stable link before execution."""
+        with self.observation_transaction() as conn:
+            conn.execute(select(state.c.key).where(state.c.key == 'control:obkat').with_for_update()).first()
+            key = 'control:' + processor
+            raw = conn.execute(select(state.c.value).where(state.c.key == key).with_for_update()).scalar()
+            if not raw:
+                conn.execute(insert(state).values(key=key, value=dump(
+                    {'mode': 'active', 'generation': 0, 'at': None, 'by': ''})))
+            elif json.loads(raw)['mode'] != 'active':
+                raise ValueError('Task is paused or stopped')
+            existing = conn.execute(select(run_requests).join(jobs, jobs.c.key == run_requests.c.job_key).where(
+                jobs.c.processor == processor, jobs.c.kind == kind, jobs.c.spacing == spacing).order_by(
+                run_requests.c.requested_at)).mappings().first()
+            if existing:
+                status = conn.execute(select(runs.c.status).where(runs.c.id == existing['run_id'])).scalar() if existing['run_id'] else None
+                if status in {None, 'running'}:
+                    return dict(existing)
+                # A new click after a failed or paused pass creates a new live
+                # journal and replaces only that request's pending retry.
+                conn.execute(delete(jobs).where(jobs.c.key == existing['job_key']))
+            request_id, at = uuid.uuid4().hex, time.time()
+            job_key = processor + ':manual:' + request_id
+            conn.execute(insert(jobs).values(key=job_key, processor=processor, kind=kind, due_at=at,
+                requested_by=requested_by, spacing=spacing))
+            receipt = dict(id=request_id, processor=processor, job_key=job_key, requested_at=at, run_id=None)
+            conn.execute(insert(run_requests).values(**receipt))
+            return receipt
+
+    def run_request(self, request_id=None, *, job_key=None):
+        with self.engine.connect() as conn:
+            row = conn.execute(select(run_requests).where(run_requests.c.job_key == job_key if job_key
+                else run_requests.c.id == request_id)).mappings().first()
+            return dict(row) if row else None
+
+    def pending_run_requests(self):
+        with self.engine.connect() as conn:
+            return {row['job_key']: dict(row) for row in conn.execute(select(run_requests).join(
+                jobs, jobs.c.key == run_requests.c.job_key)).mappings()}
+
     def control(self, processor="obkat"):
         return self.get_state("control:" + processor,
                               {"mode": "active", "generation": 0, "at": None, "by": ""})
@@ -434,12 +485,15 @@ class Store:
                 jobs.c.revision == job["revision"], jobs.c.due_at == job["due_at"]).values(
                 attempts=attempts, due_at=now + min(3600, 60 * 2 ** min(attempts, 6))))
 
-    def start_run(self, kind, requested_by="worker", dry_run=True, spacing=False, *, processor="obkat"):
+    def start_run(self, kind, requested_by="worker", dry_run=True, spacing=False, *, processor="obkat", job=None):
         run_id = uuid.uuid4().hex
         with self.engine.begin() as conn:
             conn.execute(insert(runs).values(id=run_id, processor=processor, kind=kind,
                 requested_by=requested_by, started_at=time.time(), status="running",
                 dry_run=dry_run, spacing=spacing))
+            if job:
+                conn.execute(update(run_requests).where(run_requests.c.job_key == job['key'],
+                    run_requests.c.run_id.is_(None)).values(run_id=run_id))
         return run_id
 
     def finish_run(self, run_id, events, summary, report, table_text="", status="success"):
@@ -469,7 +523,7 @@ class Store:
             if expired:
                 conn.execute(delete(state).where(state.c.key.in_(expired)))
 
-    def list_runs(self, limit=100, offset=0, processor="obkat", exclude_import=False, *, started_from=None, started_until=None, status=None):
+    def list_runs(self, limit=100, offset=0, processor="obkat", exclude_import=False, *, started_from=None, started_until=None, status=None, overlap=False):
         with self.engine.connect() as conn:
             statement = select(runs)
             if processor is not None:
@@ -477,7 +531,8 @@ class Store:
             if exclude_import:
                 statement = statement.where(runs.c.kind != "import")
             if started_from is not None:
-                statement = statement.where(runs.c.started_at >= started_from)
+                statement = statement.where(or_(runs.c.finished_at >= started_from, runs.c.status == 'running')
+                    if overlap else runs.c.started_at >= started_from)
             if started_until is not None:
                 statement = statement.where(runs.c.started_at < started_until)
             if status:

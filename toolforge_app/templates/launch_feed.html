@@ -1,0 +1,9 @@
+<div class="launch-state" {% if receipt.run_id %}data-run-url="{{ url_for('run_detail', run_id=receipt.run_id) }}"{% endif %}>
+{% if receipt.run_id %}<span class="badge running">Запуск начался</span><a href="{{ url_for('run_detail', run_id=receipt.run_id) }}">Открыть живой журнал →</a>
+{% elif not pending %}<span class="badge stopped">Запуск отменён</span><a href="{{ url_for('processor', slug=task.processor, task=task.slug) }}">Вернуться к задаче</a>
+{% elif not executor.online %}<span class="badge offline">Нет связи с исполнителем</span><p>Запрос сохранён. Он начнётся после восстановления связи.</p>
+{% elif blocked > now %}<span class="badge waiting">Пауза запросов к Википедии</span><p>Повтор после {{ blocked|localtime('%H:%M:%S') }} МСК</p>
+{% elif position and position > 1 %}<span class="badge queued">Ожидает очереди · {{ position }}</span><p>Другие работы завершатся перед этим запуском.</p>
+{% elif not position %}<span class="badge paused">Запуск приостановлен</span><p>Возобновите задачу или обработку в настройках профиля.</p>
+{% else %}<span class="badge running"><span class="running-indicator"></span>Начинаем поиск и обработку…</span><p>Живой журнал откроется автоматически.</p>{% endif %}
+</div>

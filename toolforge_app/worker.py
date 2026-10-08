@@ -9,11 +9,11 @@ from .processors.obkat.report import (TABLE_TITLE, build_report, month_range,
                                      page_title, title_month)
 from .processors.obkat.table import generate_wiki_table
 from .storage import dump
-from .execution import execution_slot
+from .execution import execution_slot, ready_jobs
 from .schedules import after_edit_due, get_schedule, month_end_deadline
 from .run_statistics import report_changes, report_snapshot
 from .wiki import RUN_ERRORS, WikiClient, WikiError, bot_may_edit, epoch
-from .runtime import execution_settings, service_enabled
+from .runtime import execution_settings, service_enabled, job_enabled
 
 
 class RunControlled(Exception):
@@ -29,6 +29,7 @@ class Worker:
         self.events = []
         self.completed_pages = []
         self.run_id = None
+        self.active_job = None
         self.execution_generation = None
         if isinstance(self.wiki, WikiClient):
             self.wiki.request_guard = self.check_control
@@ -42,7 +43,7 @@ class Worker:
 
     def check_control(self):
         self.renew()
-        if self.execution_generation is not None and not service_enabled(self.store, 'executor'):
+        if self.execution_generation is not None and not job_enabled(self.store, self.active_job):
             raise RunControlled('paused')
         control = self.store.control()
         if self.execution_generation is None:
@@ -131,6 +132,7 @@ class Worker:
     def process_page(self, title, spacing=False, respect_quiet=False):
         self.check_control()
         self.renew()
+        self.event('page', 'Сканирование и обработка страницы', title)
         base = self.wiki.fetch(title)
         self.check_control()
         month = title_month(title)
@@ -198,12 +200,16 @@ class Worker:
         return table
 
     def execute(self, job):
-        if not service_enabled(self.store, 'executor'):
+        if not job_enabled(self.store, job):
             return
         self.settings = execution_settings(self.base_settings, self.store)
         with execution_slot(self, "obkat", job) as acquired:
             if acquired:
-                self._execute(job)
+                self.active_job = job
+                try:
+                    self._execute(job)
+                finally:
+                    self.active_job = None
 
     def _execute(self, job):
         control = self.store.control()
@@ -217,19 +223,21 @@ class Worker:
         self.completed_pages = []
         before_report = report_snapshot(build_report(self.store.all_pages()))
         self.run_id = self.store.start_run(job["kind"], job["requested_by"],
-            dry_run=not self.settings.wiki_write, spacing=job["spacing"])
+            dry_run=not self.settings.wiki_write, spacing=job["spacing"], job=job)
         failed, table, controlled = False, "", None
         try:
             self.event("started", "Начало обработки", spacing=job["spacing"],
                 job={key: job[key] for key in ("key", "revision", "due_at", "spacing")})
             titles = [job["title"]] if job["kind"] == "page" else [page_title(m) for m in
                 month_range(self.settings.start_month, datetime.now(self.settings.zone))]
+            self.event('scan', f'Поиск и обработка страниц: {len(titles)}')
             for title in titles:
                 try:
                     self.process_page(title, spacing=job["spacing"],
                         respect_quiet=job["kind"] in {"page", "month_end", "bootstrap"})
                 except WikiError as exc:
                     if exc.code in RUN_ERRORS:
+                        self.event('error', 'Не удалось обработать страницу', title, error=exc.code)
                         raise
                     failed = True
                     self.event("error", "Не удалось обработать страницу", title, error=exc.code)
@@ -337,19 +345,19 @@ class Worker:
             # Check jobs frequently for prompt manual starts. Poll the wiki at
             # its own interval; every page still fetches a fresh base before edit.
             # A failed due poll blocks execution until connectivity is restored.
-            if service_enabled(self.store, 'monitor') and not self.watch(now):
+            manual = any(self.store.run_request(job_key=j['key']) for j in ready_jobs(self.store, now)
+                         if j['processor'] == 'obkat')
+            if not manual and service_enabled(self.store, 'monitor') and not self.watch(now):
                 return False
-            if not service_enabled(self.store, 'executor'):
+            if not service_enabled(self.store, 'executor') and not manual:
                 return True
             self.schedule_month_end(now)
             if self.store.control()["mode"] != "active":
                 return True
-            if not self.store.get_state("live_sync_initialized"):
+            if not manual and not self.store.get_state("live_sync_initialized"):
                 self.store.enqueue("bootstrap", "bootstrap", now)
-            due = [j for j in self.store.queue() if j["due_at"] <= now]
+            due = [j for j in ready_jobs(self.store, now) if j['processor'] == 'obkat']
             if due:
-                priority = {"bootstrap": 0, "full": 1, "month_end": 2, "page": 3}
-                due.sort(key=lambda j: (priority.get(j["kind"], 4), j["due_at"]))
                 self.execute(due[0])
             self.store.set_state("worker_heartbeat", time.time())
             return True

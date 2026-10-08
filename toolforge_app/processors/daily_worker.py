@@ -3,10 +3,10 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from ..execution import execution_slot
+from ..execution import execution_slot, ready_jobs
 from ..schedules import get_schedule, next_daily_time
 from ..wiki import WikiClient
-from ..runtime import execution_settings, service_enabled
+from ..runtime import execution_settings, job_enabled
 
 MOSCOW = ZoneInfo("Europe/Moscow")
 
@@ -25,11 +25,12 @@ class DailyWorker:
         self.renew = lambda: None
         self.outer_renew = lambda: None
         self.events, self.run_id = [], None
+        self.active_job = None
         self.wiki.request_guard = self.checkpoint
 
     def checkpoint(self):
         self.renew()
-        if self.generation is not None and not service_enabled(self.store, 'executor'):
+        if self.generation is not None and not job_enabled(self.store, self.active_job):
             raise Controlled('paused')
         control = self.store.control(self.slug)
         if self.generation is not None and (control["mode"] != "active" or control["generation"] != self.generation):
@@ -54,12 +55,16 @@ class DailyWorker:
 
 
     def execute(self, job):
-        if not service_enabled(self.store, 'executor'):
+        if not job_enabled(self.store, job):
             return
         self.settings = execution_settings(self.base_settings, self.store)
         with execution_slot(self, self.slug, job) as acquired:
             if acquired:
-                self._execute(job)
+                self.active_job = job
+                try:
+                    self._execute(job)
+                finally:
+                    self.active_job = None
 
 
     def tick(self, now=None):
@@ -88,9 +93,9 @@ class DailyWorker:
             heartbeat()
             self.schedule(now)
             if self.store.control(self.slug)["mode"] == "active":
-                due = [job for job in self.store.queue(self.slug) if job["due_at"] <= now]
+                due = [job for job in ready_jobs(self.store, now) if job['processor'] == self.slug]
                 if due:
-                    self.execute(min(due, key=lambda job: (job["kind"] == "daily", job["due_at"])))
+                    self.execute(due[0])
             heartbeat()
             self.schedule(time.time())
             return True

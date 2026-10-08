@@ -48,7 +48,7 @@ def test_log_tab_is_scoped_to_current_action_and_run_backlink_opens_log(settings
     assert f'/runs/{first}' in log and f'/runs/{other}' not in log
     assert 'class="pending-articles"' not in log and '<section id="history"' in log
     detail = client.get('/runs/' + first).get_data(as_text=True)
-    assert 'task=maintenance-dates&amp;view=logs#history' in detail
+    assert '/runs?task=maintenance-dates' in detail
 
 
 def test_countdown_uses_schedule_and_disappears_when_action_is_paused(settings, store):

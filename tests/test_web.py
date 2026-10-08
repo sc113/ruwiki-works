@@ -132,11 +132,13 @@ def test_csv_does_not_execute_heading_as_spreadsheet_formula(client, store, wiki
     assert "'+HYPERLINK" in csv
 
 
-def test_historical_report_is_immutable_and_full_log_is_public(client, store):
+def test_historical_report_is_immutable_and_diagnostics_are_private(client, store):
     report = {"items": [], "counts": {}, "problems": 3, "nuances": 4, "pages": 1}
     run_id = store.start_run("full", "admin")
     store.finish_run(run_id, [{"at": 1, "code": "test", "message": "Recorded", "title": ""}], {}, report, "Index")
     assert client.get("/runs/" + run_id).status_code == 200
+    assert client.get("/runs/" + run_id + "/log.json").get_json()["events"] == []
+    set_session(client, "admin")
     assert client.get("/runs/" + run_id + "/log.json").get_json()["events"][0]["message"] == "Recorded"
     assert client.get("/reports/obkat.json?run=" + run_id).get_json()["problems"] == 3
     assert client.get("/runs/" + run_id + "/table.wiki").get_data(as_text=True) == "Index"
@@ -162,14 +164,20 @@ def test_public_log_is_continuous_escaped_text_and_can_be_downloaded(client, sto
     store.finish_run(run_id, [{"at": 1, "code": "error", "message": '<script>alert("log")</script>',
         "title": "Категория:Пример", "error": "network", "diff_before": "old\n", "diff_after": "new\n"}], {}, {})
     html = client.get("/runs/" + run_id).get_data(as_text=True)
-    assert '<pre class="plain-log">' in html and '<script>alert("log")</script>' not in html
-    assert "&lt;script&gt;" in html
+    assert 'live-run' in html and '<script>alert("log")</script>' not in html
+    assert 'Не обработано' in html and 'old' not in html
     text = client.get("/runs/" + run_id + "/log.txt")
     assert text.status_code == 200 and text.mimetype == "text/plain"
-    assert "Ошибка: network" in text.get_data(as_text=True)
-    assert "-old" in text.get_data(as_text=True) and "+new" in text.get_data(as_text=True)
+    assert 'Категория:Пример' in text.get_data(as_text=True) and 'network' not in text.get_data(as_text=True)
+    assert '-old' not in text.get_data(as_text=True)
+    assert client.get('/runs/' + run_id + '/events/0').status_code == 403
     set_session(client, "admin")
-    assert '<ol class="event-list">' in client.get("/runs/" + run_id).get_data(as_text=True)
+    html = client.get('/runs/' + run_id).get_data(as_text=True)
+    assert '&lt;script&gt;' in html and '<script>alert("log")</script>' not in html
+    text = client.get('/runs/' + run_id + '/log.txt').get_data(as_text=True)
+    assert 'Ошибка: network' in text and '-old' in text and '+new' in text
+    assert 'old' in client.get('/runs/' + run_id + '/events/0').get_data(as_text=True)
+
 
 
 def test_nomination_report_has_log_as_last_tab_and_public_queue(client, store, wiki):

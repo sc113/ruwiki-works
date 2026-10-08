@@ -84,7 +84,7 @@ def test_admin_status_has_all_components_without_secret_values(settings, store):
                    'Учётная запись бота', 'Wikimedia OAuth', 'Последняя проверка'):
         assert phrase in html
     assert settings.bot_password not in html and settings.oauth_secret not in html and settings.oauth_key not in html
-    assert 'href="/admin/connections"' in client.get('/').get_data(as_text=True)
+    assert 'href="/admin/profile"' in client.get('/').get_data(as_text=True)
     assert client.get('/admin').headers['Cache-Control'] == 'no-store'
 
 

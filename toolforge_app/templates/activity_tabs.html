@@ -1,0 +1,1 @@
+<nav class="tabs activity-tabs" aria-label="Работы бота"><a class="{{ 'active' if activity_view == 'history' }}" href="{{ url_for('run_history_page', task=selected, day=day, status=status) }}">Запуски</a><a class="{{ 'active' if activity_view == 'journal' }}" href="{{ url_for('work_journal', task=selected, day=day, status=status) }}">Журнал</a></nav>

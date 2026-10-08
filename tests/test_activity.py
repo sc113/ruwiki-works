@@ -28,11 +28,12 @@ def test_public_console_uses_the_same_saved_changes_projection_as_logs(settings,
         assert run_id in text and "PRIVATE_" not in text and "SECRET_ERROR" not in text
         if "console" in path:
             assert "Обработанная статья" in text and "2020-01-02" in text
-            assert "Failed article" not in text and "Unchanged article" not in text
+            assert "Failed article" in text and "Unchanged article" not in text
     set_session(client, "admin")
     text = client.get("/console").get_data(as_text=True)
-    assert "PRIVATE_SETTING" in text and "PRIVATE_OLD_TEXT" in text
-    assert "Подробности" in text and "Полный лог" in text
+    assert "PRIVATE_DIAGNOSTIC" in text
+    assert "PRIVATE_OLD_TEXT" in client.get("/runs/" + run_id + "/events/3").get_data(as_text=True)
+    assert "Подробности" in text and "Полный журнал" in text
 
 
 def test_history_filters_use_moscow_calendar_days_and_keep_duration(settings, store):
@@ -40,13 +41,13 @@ def test_history_filters_use_moscow_calendar_days_and_keep_duration(settings, st
     included = timed_run(store, early, checked=10, changed=4, report_problems=3, problems_added=2, skipped=1)
     excluded = timed_run(store, early - 600, slug="translations-talk")
     client = create_app(settings, store).test_client()
-    for endpoint in ("/console", "/console/fragment"):
+    for endpoint in ("/runs", "/runs/history-fragment"):
         text = client.get(endpoint + "?day=2026-10-06").get_data(as_text=True)
         assert included in text and excluded not in text
         assert "1 мин 5 с" in text and "+2 новые" in text
         assert "06.10.2026, 00:05" in text
-    assert excluded in client.get("/console?task=translations-talk").get_data(as_text=True)
-    assert included not in client.get("/console?task=translations-talk").get_data(as_text=True)
+    assert excluded in client.get("/runs?task=translations-talk").get_data(as_text=True)
+    assert included not in client.get("/runs?task=translations-talk").get_data(as_text=True)
 
 
 def test_history_paginates_all_runs_and_index_shows_only_eight(settings, store):
@@ -56,7 +57,7 @@ def test_history_paginates_all_runs_and_index_shows_only_eight(settings, store):
     assert [entry['run']['id'] for entry in history['entries']] == list(reversed(run_ids[5:]))
     assert history['has_next']
     client = create_app(settings, store).test_client()
-    second = client.get("/console?page=2").get_data(as_text=True)
+    second = client.get("/runs?page=2").get_data(as_text=True)
     # The live console may contain newer events; the table is strictly paginated.
     table = second.split('<table class="runs-table"')[1].split('</table>')[0]
     assert all(run_id in table for run_id in run_ids[:5])
@@ -65,7 +66,7 @@ def test_history_paginates_all_runs_and_index_shows_only_eight(settings, store):
     index = client.get("/").get_data(as_text=True).split('class="recent-runs"')[1]
     assert all(run_id in index for run_id in run_ids[-8:])
     assert all(run_id not in index for run_id in run_ids[:-8])
-    assert '/console' in index
+    assert '/runs' in index
 
 
 @pytest.mark.parametrize("query", ["day=invalid", "day=2026-02-30", "status=missing", "page=0", "page=abc"])

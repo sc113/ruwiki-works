@@ -2,7 +2,7 @@
 {% from 'icons.html' import icon %}
 {% block title %}Уведомления{% endblock %}
 {% block content %}
-<div class="page-heading"><div class="title-row"><span class="page-task-icon">{{ icon('bell') }}</span><h1>Уведомления</h1></div></div>
+<div class="page-heading"><div class="title-row"><span class="page-task-icon">{{ icon('bell') }}</span><h1>Уведомления</h1></div><form class="notification-form" action="{{ url_for('notifications_read_all') }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="button secondary" type="submit">{{ icon('report') }}Прочитать все</button></form></div>
 <section class="incident-list" aria-label="Сбои и их устранение">
 {% for entry in entries %}
   <article class="incident {{ 'unread' if not entry.read_at }} {{ 'resolved' if entry.resolved_at }}">

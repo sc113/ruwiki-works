@@ -23,7 +23,7 @@ def system_status(settings, store, now=None):
     paused = all(value['mode'] != 'active' for value in controls.values())
     running = []
 
-    def alert(key, title, message, target='/console'):
+    def alert(key, title, message, target='/runs'):
         conditions[key] = dict(title=title, message=message, target=target)
 
     if not stopped and any(c['enabled'] for c in components.values()):
@@ -79,19 +79,19 @@ def system_status(settings, store, now=None):
             recent = store.list_runs(1, processor=task.slug, exclude_import=True, started_from=deadline)
             if deadline >= baseline and now - deadline > 900 and not recent:
                 alert('missed:' + task.slug, 'Пропущен запуск: ' + task.title,
-                      'После времени ежедневного запуска прошло больше 15 минут; обработка не началась.', '/console?task=' + task.slug)
+                      'После времени ежедневного запуска прошло больше 15 минут; обработка не началась.', '/runs?task=' + task.slug)
 
     executor, monitor = components['executor'], components['monitor']
     if stopped:
         status, label = 'stopped', 'Бот остановлен'
+    elif running:
+        status, label = 'running', 'В работе'
     elif not executor['enabled']:
         status, label = 'paused', 'Обработка выключена'
     elif paused:
         status, label = 'paused', 'Обработка приостановлена'
     elif not executor['online']:
         status, label = 'offline', 'Нет связи с обработчиком' if executor['at'] else 'Обработка не запущена'
-    elif running:
-        status, label = 'running', 'В работе'
     elif not monitor['enabled']:
         status, label = 'warning', 'Работает · поиск выключен'
     elif not monitor['online']:

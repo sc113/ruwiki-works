@@ -22,7 +22,8 @@ from .processors.obkat.report import (CHECKS, build_report, fix_guidance,
 from .storage import Store
 from .processors.daily import TASK_SLUGS, fields, form_value, get_config, parse_form
 from .processors.logs import public_run
-from .console import ACTIVITY, console_data, run_history, run_metrics
+from .console import ACTIVITY, console_data, run_history, run_metrics, grouped_queue
+from .execution import ready_jobs
 from .schedules import save_schedule
 from .health import system_status, component_health
 from .connections import (ERRORS as CONNECTION_ERRORS, FIELDS as CONNECTION_FIELDS, RIGHTS,
@@ -46,6 +47,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
     store = store or Store(settings.database_url)
     app = Flask(__name__)
     app.secret_key = settings.secret_key or secrets.token_urlsafe(48)
+    app.json.ensure_ascii = False
     app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
         TEMPLATES_AUTO_RELOAD=admin_preview,
         SESSION_COOKIE_SECURE=settings.public_url.startswith("https://"),
@@ -61,7 +63,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
 
     def preview_return():
         target = request.form.get("next", "/")
-        if "\\" in target or not (target == "/" or target.startswith(("/?", "/processors/", "/runs/", "/console", "/notifications", "/admin"))):
+        if "\\" in target or not (target == "/" or target.startswith(("/?", "/processors/", "/runs", "/journal", "/launches/", "/console", "/notifications", "/admin"))):
             abort(400)
         return target
 
@@ -146,6 +148,8 @@ def create_app(settings=None, store=None, *, admin_preview=False):
     def localtime(value, fmt="%d.%m.%Y, %H:%M"):
         return datetime.fromtimestamp(value, settings.zone).strftime(fmt) if value else "—"
 
+    app.add_template_filter(grouped_queue, 'group_jobs')
+
     @app.template_filter("countdown")
     def countdown(value):
         if not value:
@@ -212,6 +216,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         return render_template('system_status.html')
 
     @app.route('/admin')
+    @app.route('/admin/profile', endpoint='profile_page')
     @app.route('/admin/connections')
     def connections_page():
         if not full_logs():
@@ -226,7 +231,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             current = settings
             connection_error = CONNECTION_ERRORS[exc.code]
         return render_template('connections.html',
-            module=Processor('connections', 'Подключения', 'Подключения', '', True),
+            module=Processor('connections', 'Настройки профиля', 'Настройки профиля', '', True),
             connections=connection_summary(current, store), connection_error=connection_error,
             bot_login=current.bot_login, rights=RIGHTS, database_kind=store.engine.dialect.name,
             overview=build_overview(settings, store), write_ceiling=settings.wiki_write,
@@ -338,6 +343,12 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             abort(404)
         return redirect(url_for('notifications_page'))
 
+    @app.route('/admin/notifications/read-all', methods=['POST'])
+    @admin_required
+    def notifications_read_all():
+        store.read_all_notifications(time.time())
+        return redirect(url_for('notifications_page'))
+
     @app.route('/admin/tasks/<slug>/retry-article', methods=['POST'])
     @admin_required
     def retry_article(slug):
@@ -358,6 +369,10 @@ def create_app(settings=None, store=None, *, admin_preview=False):
 
     @app.route("/console")
     @app.route("/console/fragment", endpoint="console_fragment")
+    @app.route('/runs', endpoint='run_history_page')
+    @app.route('/runs/history-fragment', endpoint='history_fragment')
+    @app.route('/journal', endpoint='work_journal')
+    @app.route('/journal/fragment', endpoint='journal_fragment')
     def work_console():
         selected = request.args.get("task", "")
         if selected and selected not in {"obkat", *TASK_SLUGS}:
@@ -376,11 +391,13 @@ def create_app(settings=None, store=None, *, admin_preview=False):
                 started_from, started_until = date.timestamp(), (date + timedelta(days=1)).timestamp()
         except ValueError:
             abort(400)
-        template = "console_feed.html" if request.path.endswith("/fragment") else "console.html"
+        view = 'history' if request.endpoint in {'run_history_page', 'history_fragment'} else 'journal'
+        template = "console_feed.html" if request.endpoint in {'history_fragment', 'console_fragment', 'journal_fragment'} else "console.html"
         return render_template(template, module=ACTIVITY, selected=selected, day=day, status=status, page=page,
+            activity_view=view,
             live=page == 1 and (not day or day == datetime.now(settings.zone).strftime("%Y-%m-%d")),
             console=console_data(store, selected, full=full_logs(), page=page,
-                                 started_from=started_from, started_until=started_until, status=status))
+                                 started_from=started_from, started_until=started_until, status=status, include_events=view == 'journal'))
 
     @app.route("/tasks/<slug>/status-fragment")
     def task_status_fragment(slug):
@@ -483,21 +500,57 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             local_snapshot=any(p["origin"] == "import" for p in store.all_pages()))
 
     @app.route("/runs/<run_id>")
+    @app.route('/runs/<run_id>/fragment', endpoint='run_fragment')
     def run_detail(run_id):
         run = load_run(run_id)
         task = get_task(run["processor"])
         module = get_processor(task.processor) if task else get_processor(run["processor"])
-        for event in run["events"]:
-            if "diff_before" in event:
-                event["diff"] = "".join(difflib.unified_diff(event["diff_before"].splitlines(True),
-                    event["diff_after"].splitlines(True), fromfile="До обработки", tofile="После обработки"))
-        return render_template("run.html", module=module, task=task, active="logs", run=run,
-                               metrics=run_metrics(run), log_text=plain_log(run))
+        return render_template('run_feed.html' if request.endpoint == 'run_fragment' else 'run.html',
+            module=module, task=task, active='logs', run=run, metrics=run_metrics(run))
+
+    @app.route('/runs/<run_id>/events/<int:index>')
+    def run_event_details(run_id, index):
+        if not full_logs():
+            abort(403)
+        run = load_run(run_id)
+        if index >= len(run['events']):
+            abort(404)
+        event = run['events'][index]
+        has_diff = all(isinstance(event.get(key), str) for key in ('diff_before', 'diff_after'))
+        details = {key: value for key, value in event.items()
+                   if not has_diff or key not in {'diff_before', 'diff_after'}}
+        text = json.dumps(details, ensure_ascii=False, indent=2)
+        if has_diff:
+            text += '\n\nИзменения:\n' + ''.join(difflib.unified_diff(
+                event['diff_before'].splitlines(True), event['diff_after'].splitlines(True),
+                fromfile='До обработки', tofile='После обработки'))
+        return Response(text, content_type='text/plain; charset=utf-8')
+
+    @app.route('/launches/<request_id>')
+    @app.route('/launches/<request_id>/fragment', endpoint='launch_fragment')
+    def launch_detail(request_id):
+        receipt = store.run_request(request_id)
+        if not receipt:
+            abort(404)
+        if receipt['run_id'] and request.endpoint != 'launch_fragment':
+            return redirect(url_for('run_detail', run_id=receipt['run_id']))
+        task = get_task(receipt['processor'])
+        pending = next((j for j in store.queue(task.slug) if j['key'] == receipt['job_key']), None)
+        ready = ready_jobs(store)
+        position = next((i + 1 for i, j in enumerate(ready) if j['key'] == receipt['job_key']), None)
+        return render_template('launch_feed.html' if request.endpoint == 'launch_fragment' else 'launch.html',
+            module=get_processor(task.processor), task=task, receipt=receipt, pending=pending,
+            position=position, executor=component_health(settings, store, 'executor'),
+            blocked=(store.get_state('wiki:api_backoff') or {}).get('until', 0))
 
     def plain_log(run):
         lines = [localtime(run["started_at"]) + " · " + KIND_LABELS.get(run["kind"], run["kind"]),
                  STATUS_LABELS.get(run["status"], run["status"]) + (" · Режим проверки" if run["dry_run"] else ""), ""]
         for event in run["events"]:
+            if not full_logs():
+                symbol = {'success': '✓', 'error': '✕', 'warning': '!', 'running': '…', 'preview': '◇'}.get(event.get('tone'), '·')
+                lines.append(localtime(event['at'], '%d.%m.%Y %H:%M:%S') + '  ' + symbol + '  ' + event['title'] + ' · ' + event['message'])
+                continue
             lines.append(localtime(event["at"], "%H:%M:%S") + "  " + event["message"])
             if event.get("title"):
                 lines.append("          " + event["title"])
@@ -505,16 +558,18 @@ def create_app(settings=None, store=None, *, admin_preview=False):
                 lines.append("          Версия: " + str(event["revision"]))
             if event.get("error"):
                 lines.append("          Ошибка: " + event["error"])
-            if "diff_before" in event:
+            has_diff = all(isinstance(event.get(key), str) for key in ('diff_before', 'diff_after'))
+            if has_diff:
                 lines.append("".join(difflib.unified_diff(event["diff_before"].splitlines(True),
                     event["diff_after"].splitlines(True), fromfile="До обработки", tofile="После обработки")))
             details = {key: value for key, value in event.items() if key not in
-                       {"at", "code", "message", "title", "revision", "error", "diff_before", "diff_after", "diff"}}
-            if details and run["processor"] in TASK_SLUGS and full_logs():
+                       {"at", "code", "message", "title", "revision", "error", "diff"}
+                       and (not has_diff or key not in {"diff_before", "diff_after"})}
+            if details and full_logs():
                 lines.append(json.dumps(details, ensure_ascii=False, indent=2))
             lines.append("")
-        if not run["events"] and run["processor"] in TASK_SLUGS:
-            lines.append("Сохранённых изменений в статьях нет.")
+        if not run["events"]:
+            lines.append('Обработанных страниц пока нет.')
         return "\n".join(lines)
 
     @app.route("/runs/<run_id>/log.txt")
@@ -575,10 +630,11 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         mode = request.form.get("mode", "normal")
         if mode not in {"normal", "spacing"}:
             abort(400)
-        key = "manual:" + mode
-        created = store.enqueue(key, "full", time.time(), spacing=mode == "spacing", requested_by=session["username"])
-        flash("Запуск добавлен в очередь; свободный обработчик подхватит его в течение нескольких секунд." if created else "Такой запуск уже находится в очереди.")
-        return redirect(url_for("processor", slug="obkat", view="logs") + "#history")
+        try:
+            receipt = store.request_run('obkat', session['username'], spacing=mode == 'spacing')
+        except ValueError:
+            abort(409, 'Задача приостановлена или остановлена.')
+        return redirect(url_for('launch_detail', request_id=receipt['id']))
 
     @app.route("/admin/tasks/<slug>/control", methods=["POST"])
     @admin_required
@@ -614,11 +670,11 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         mode = request.form.get("mode", "normal")
         if mode not in {"normal", "recheck"} or mode == "recheck" and get_task(slug).processor not in {"translations", "sections"}:
             abort(400)
-        created = store.enqueue("manual:" + mode, "recheck" if mode == "recheck" else "full", time.time(),
-                                processor=slug, requested_by=session["username"])
-        flash(("Проверка с нуля добавлена в очередь. История запусков сохранится." if mode == "recheck"
-               else "Запуск добавлен в очередь.") if created else "Запуск уже находится в очереди.")
-        return redirect(url_for("processor", slug=get_task(slug).processor, task=slug, view="logs") + "#history")
+        try:
+            receipt = store.request_run(slug, session['username'], kind='recheck' if mode == 'recheck' else 'full')
+        except ValueError:
+            abort(409, 'Задача приостановлена или остановлена.')
+        return redirect(url_for('launch_detail', request_id=receipt['id']))
 
     @app.route("/admin/maintenance/<slug>/settings", methods=["POST"])
     @app.route("/admin/tasks/<slug>/settings", methods=["POST"], endpoint="task_settings")

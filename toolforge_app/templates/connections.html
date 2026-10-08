@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
 {% from 'icons.html' import icon %}
-{% block title %}Подключения{% endblock %}
+{% block title %}Настройки профиля{% endblock %}
 {% block content %}
-<div class="page-heading"><div class="title-row"><span class="page-task-icon">{{ icon('connections') }}</span><h1>Система и подключения</h1></div><a class="button secondary" href="{{ url_for('work_console') }}">{{ icon('console') }}Консоль работ</a></div>
+<div class="page-heading"><div class="title-row"><span class="page-task-icon">{{ icon('connections') }}</span><h1>Настройки профиля</h1></div><a class="button secondary" href="{{ url_for('work_journal') }}">{{ icon('console') }}Журнал работ</a></div>
 {% if connection_error %}<p class="notice" role="alert">{{ connection_error }}</p>{% endif %}
 <div id="admin-system-status" data-refresh-url="{{ url_for('admin_status_fragment') }}">{% include 'admin_status.html' %}</div>
 <section class="connection-panel" id="bot" aria-labelledby="bot-heading">
@@ -37,6 +37,6 @@
     </form></details>
   </div>
 </section>
-<p class="connection-note">Выключение приостанавливает работу процесса и сохраняет очередь. Сигнал связи продолжает поступать. Сайт и базу останавливают через Toolforge.</p>
+<p class="connection-note">Выключение исполнителя приостанавливает автоматическую обработку и сохраняет очередь; ручной запуск остаётся доступен. Новая команда выключения прерывает текущий проход. Сигнал связи продолжает поступать. Сайт и базу останавливают через Toolforge.</p>
 <p class="connection-note">Сохранённые пароли и tokens не отображаются. Новые данные применяются без перезапуска. Проверки подключений не включают запись в Википедию.</p>
 {% endblock %}

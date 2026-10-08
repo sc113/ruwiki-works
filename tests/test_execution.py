@@ -170,12 +170,13 @@ def test_unified_console_is_public_but_hides_diagnostics_on_both_endpoints(setti
                      dict(checked=12, changed=0, skipped=2, errors=1), {})
     client = create_app(settings, store).test_client()
     set_session(client, username)
-    for path in ('/console', '/console/fragment'):
+    for path in ('/runs', '/runs/history-fragment', '/journal', '/journal/fragment'):
         response = client.get(path)
         assert response.status_code == 200
         assert 'PRIVATE_DIAGNOSTICS' not in response.get_data(as_text=True)
-        assert run_id in response.get_data(as_text=True)
-    assert 'Запуски и консоль' in client.get('/').get_data(as_text=True)
+        if path.startswith('/runs'):
+            assert run_id in response.get_data(as_text=True)
+    assert 'Работы бота' in client.get('/').get_data(as_text=True)
 
 
 def test_console_collects_all_actions_and_filter_keeps_run_links(settings, store):

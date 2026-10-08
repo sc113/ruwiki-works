@@ -38,7 +38,7 @@ class SectionWorker(DailyWorker):
         config = copy.deepcopy(get_config(self.store, self.slug))
         dry_run = not (self.settings.wiki_write and config['autosave'])
         self.generation, self.events = control['generation'], []
-        self.run_id = self.store.start_run(job['kind'], job['requested_by'], dry_run=dry_run, processor=self.slug)
+        self.run_id = self.store.start_run(job['kind'], job['requested_by'], dry_run=dry_run, processor=self.slug, job=job)
         summary = dict(checked=0, changed=0, proposed=0, skipped=0, problems=0, errors=0, remaining=None)
         before = report_snapshot(report(self.store, self.slug, config))
         failed, controlled, result_report = False, None, {}
@@ -51,8 +51,9 @@ class SectionWorker(DailyWorker):
                     self.event('recheck', 'Проверка всех статей; сохранённые отметки не изменяются в режиме проверки')
                 elif self.store.reset_article_checks(self.slug, job):
                     self.event('recheck', 'Начата проверка с нуля. История запусков сохранена')
+            self.event("scan", "Поиск статей для обработки")
             inventory = refresh_inventory(self.wiki, self.store, self.slug, config=config,
-                                          force=job['kind'] in {'recheck', 'article'})
+                                          force=job['kind'] in {'full', 'recheck', 'article'})
             allowed = set(inventory['articles'])
             checked = self.store.checked_articles(self.slug)
             candidates = allowed if not config['resume'] or dry_run and job['kind'] == 'recheck' else allowed - checked.keys()
@@ -117,6 +118,7 @@ class SectionWorker(DailyWorker):
                         remember(title, 'conflicting-markers' if issues else 'edited', notes[title]['reason'] if issues else '')
                 except WikiError as exc:
                     if exc.code in RUN_ERRORS:
+                        self.event('error', 'Не удалось обработать страницу', title=title, error=exc.code)
                         raise
                     reason = LABELS.get(exc.code, 'Ошибка обработки: ' + exc.code)
                     if exc.code in SKIPS:

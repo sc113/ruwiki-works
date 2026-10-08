@@ -5,5 +5,5 @@
   {{ timeline(task_state, 'Поиск правок') }}
   {% include 'run_progress.html' %}
   {% with launch_kind='obkat' %}{% include 'processing_management.html' %}{% endwith %}
-  {% if queue %}<ul id="queue" class="queue-list">{% for job in queue %}<li><span>{% if job.title %}<a href="{{ wiki_url(job.title) }}" target="_blank" rel="noopener">{{ job.title.replace('Википедия:Обсуждение категорий/', '') }}</a>{% else %}{{ kind_labels.get(job.kind, job.kind) }}{% endif %}</span><time>{{ job.due_at|localtime }}</time><span class="countdown" data-countdown="{{ job.due_at }}" data-server-now="{{ now }}">{{ job.due_at|countdown }}</span></li>{% endfor %}</ul>{% else %}<span id="queue"></span>{% endif %}
+  {% if queue %}<ul id="queue" class="queue-list">{% for group in queue|group_jobs %}<li><span>{{ group.label or kind_labels.get(group.job.kind, group.job.kind) }}{% if group.label %} · <strong>{{ group.count }} страниц</strong>{% endif %}</span><time>{{ group.due_at|localtime }}</time><span class="countdown" data-countdown="{{ group.due_at }}" data-server-now="{{ now }}">{{ group.due_at|countdown }}</span></li>{% endfor %}</ul>{% else %}<span id="queue"></span>{% endif %}
 </section>
