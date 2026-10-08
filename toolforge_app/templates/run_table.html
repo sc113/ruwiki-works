@@ -2,12 +2,11 @@
 {% if entries %}
 <div class="runs-table-wrap" tabindex="0" role="region" aria-label="Таблица запусков задач">
 <table class="runs-table" role="table">
-  <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Запуск · МСК</th><th role="columnheader" scope="col">Задача</th><th role="columnheader" scope="col">Состояние</th><th role="columnheader" scope="col">Длительность</th><th role="columnheader" scope="col">Результат</th></tr></thead>
+  <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Запуск · МСК</th><th role="columnheader" scope="col">Задача</th><th role="columnheader" scope="col">Состояние</th><th role="columnheader" scope="col">Результат</th></tr></thead>
   <tbody role="rowgroup">{% for entry in entries %}<tr role="row">
-    <td role="cell"><a class="run-time" href="{{ url_for('run_detail', run_id=entry.run.id) }}"><time>{{ entry.run.started_at|localtime }}</time></a><span class="run-secondary">{{ kind_labels.get(entry.run.kind, entry.run.kind) }}</span></td>
-    <td role="cell"><span class="run-secondary">{{ entry.module.title if entry.module else entry.run.processor }}</span><a class="run-task" href="{{ url_for('run_detail', run_id=entry.run.id) }}">{{ icon(entry.task.slug if entry.task else 'history') }}{{ entry.task.title if entry.task else entry.run.processor }}</a></td>
-    <td role="cell"><span class="badge {{ entry.run.status }}">{{ status_labels.get(entry.run.status, entry.run.status) }}</span>{% if entry.run.dry_run %}<span class="run-secondary">Проверка</span>{% endif %}</td>
-    <td role="cell" class="run-duration">{{ entry.run|duration }}{% if entry.run.status == 'running' %}<span class="run-secondary">продолжается</span>{% endif %}</td>
+    <td role="cell"><a class="run-time" title="{{ kind_labels.get(entry.run.kind, entry.run.kind) }}" href="{{ url_for('run_detail', run_id=entry.run.id) }}"><time>{{ entry.run.started_at|localtime('%d.%m.%Y') }}<span>{{ entry.run.started_at|localtime('%H:%M:%S') }}</span></time></a></td>
+    <td role="cell"><a class="run-task" title="{{ entry.module.title if entry.module else entry.run.processor }} · {{ kind_labels.get(entry.run.kind, entry.run.kind) }}" href="{{ url_for('run_detail', run_id=entry.run.id) }}">{{ icon(entry.task.slug if entry.task else 'history') }}<span>{% if entry.module and entry.module.slug == 'translations' %}<span class="run-module">Переводы · </span>{% endif %}{{ entry.task.title if entry.task else entry.run.processor }}</span></a></td>
+    <td role="cell"><span class="badge {{ entry.run.status }}">{{ status_labels.get(entry.run.status, entry.run.status) }}</span>{% if entry.run.dry_run %}<span class="run-mode" title="Без сохранения правок" aria-label="Без сохранения правок">◇</span>{% endif %}<span class="run-secondary run-duration" title="Длительность">{{ entry.run|duration }}</span></td>
     <td role="cell">{% with metrics=entry.metrics %}{% include 'run_metrics.html' %}{% endwith %}</td>
   </tr>{% endfor %}</tbody>
 </table>

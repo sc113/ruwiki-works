@@ -97,11 +97,15 @@ class SectionWorker(DailyWorker):
                         summary['problems'] += 1
                         self.event('notice', reason, title=title, issues=issues)
                     if text == base.text:
-                        reason = 'Замена не требуется' if any(row['targets'] for row in diagnostics) else 'Шаблон отсутствует в прямом содержимом разделов'
+                        targets = [row for row in diagnostics if row['targets']]
+                        reason = ('Разделы с шаблоном пустые; замена не требуется' if self.slug == 'sections-empty-to-fill'
+                                  else 'Разделы с шаблоном содержат текст; замена не требуется') if targets else 'Шаблон отсутствует в прямом содержимом разделов'
+                        if issues:
+                            reason = notes[title]['reason']
                         if not issues:
                             summary['skipped'] += 1
                             skipped[title] = dict(title=title, outcome='unchanged', reason=reason)
-                        self.event('unchanged', reason, title=title)
+                        self.event('unchanged', reason, title=title, revision=base.revision, sections=targets)
                         remember(title, 'conflicting-markers' if issues else 'unchanged', notes[title]['reason'] if issues else reason)
                         continue
                     self.checkpoint()

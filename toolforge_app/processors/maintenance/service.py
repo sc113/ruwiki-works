@@ -104,7 +104,9 @@ class MaintenanceWorker(DailyWorker):
                     notes_by_title[title] = notes
                     if text == base.text:
                         summary["skipped"] += 1
-                        self.event("unchanged", "Изменения не требуются или дата не определена", title=title)
+                        reason = '; '.join(notes) or ('В RQ нет параметров, подходящих для замены'
+                            if self.slug == 'maintenance-rq' and not used else 'Изменения не требуются')
+                        self.event("unchanged", reason, title=title)
                         continue
                     self.checkpoint()
                     edit_summary = {"maintenance-dates": "Даты установки шаблонов",

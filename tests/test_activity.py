@@ -45,7 +45,7 @@ def test_history_filters_use_moscow_calendar_days_and_keep_duration(settings, st
         text = client.get(endpoint + "?day=2026-10-06").get_data(as_text=True)
         assert included in text and excluded not in text
         assert "1 мин 5 с" in text and "+2 новые" in text
-        assert "06.10.2026, 00:05" in text
+        assert "06.10.2026" in text and "00:05:00" in text
     assert excluded in client.get("/runs?task=translations-talk").get_data(as_text=True)
     assert included not in client.get("/runs?task=translations-talk").get_data(as_text=True)
 

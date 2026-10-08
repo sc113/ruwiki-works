@@ -14,7 +14,7 @@ document.addEventListener("submit", (event) => {
     button.textContent = 'Проверяем подключение…';
     return;
   }
-  if (!form.closest(".admin-panel, .task-controls, .schedule-form, .article-retry, .notification-form")) return;
+  if (!form.closest(".admin-panel, .task-controls, .schedule-form, .article-retry, .notification-form, .bulk-launch")) return;
   submittingCommand = true;
   const button = form.querySelector("button");
   button.disabled = true;

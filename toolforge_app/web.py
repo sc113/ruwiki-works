@@ -148,6 +148,13 @@ def create_app(settings=None, store=None, *, admin_preview=False):
     def localtime(value, fmt="%d.%m.%Y, %H:%M"):
         return datetime.fromtimestamp(value, settings.zone).strftime(fmt) if value else "—"
 
+    @app.template_filter('logtime')
+    def logtime(value):
+        if value is None:
+            return '—'
+        moment = datetime.fromtimestamp(value, settings.zone)
+        return moment.strftime('%d.%m.%Y %H:%M:%S') + f'.{moment.microsecond // 1000:03d}'
+
     app.add_template_filter(grouped_queue, 'group_jobs')
 
     @app.template_filter("countdown")
@@ -549,9 +556,9 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         for event in run["events"]:
             if not full_logs():
                 symbol = {'success': '✓', 'error': '✕', 'warning': '!', 'running': '…', 'preview': '◇'}.get(event.get('tone'), '·')
-                lines.append(localtime(event['at'], '%d.%m.%Y %H:%M:%S') + '  ' + symbol + '  ' + event['title'] + ' · ' + event['message'])
+                lines.append(logtime(event['at']) + '  ' + symbol + '  ' + event['title'] + ' · ' + event['message'])
                 continue
-            lines.append(localtime(event["at"], "%H:%M:%S") + "  " + event["message"])
+            lines.append(logtime(event['at']) + "  " + event["message"])
             if event.get("title"):
                 lines.append("          " + event["title"])
             if event.get("revision"):
@@ -659,11 +666,25 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         return redirect(url_for("processor", slug=module.slug, task=task.slug) if request.form.get("return_to") == "processor"
                         else url_for("index"))
 
+    @app.route('/admin/tasks/run-all', methods=['POST'])
+    @admin_required
+    def run_all_tasks():
+        try:
+            receipts, skipped = store.request_runs([task.slug for task in TASKS if task.enabled], session['username'])
+        except ValueError:
+            flash('Нет включённых задач. Сначала включите нужные задачи.')
+            return redirect(url_for('index'))
+        message = f'Назначено задач: {len(receipts)}. Обработка идёт по очереди, в порядке обзора.'
+        if skipped:
+            message += f' На паузе или остановлены: {len(skipped)}; они не запускаются.'
+        flash(message)
+        return redirect(url_for('work_journal'))
+
     @app.route("/admin/maintenance/<slug>/run", methods=["POST"])
     @app.route("/admin/tasks/<slug>/run", methods=["POST"], endpoint="task_run")
     @admin_required
     def maintenance_run(slug):
-        if slug not in TASK_SLUGS:
+        if slug not in {task.slug for task in TASKS if task.enabled}:
             abort(404)
         if store.control(slug)["mode"] != "active":
             abort(409, "Возобновите задачу перед ручным запуском.")

@@ -29,7 +29,8 @@ def test_admin_controls_require_csrf_and_reject_unknown_or_unconnected_tasks(cli
             data={"csrf": "csrf-test", "action": action}).status_code == expected
     assert store.control()["mode"] == "active" and not store.queue()
     assert 'name="action"' in client.get("/").get_data(as_text=True)
-    assert "Перезапустить" in client.get("/processors/obkat").get_data(as_text=True)
+    html = client.get("/processors/obkat").get_data(as_text=True)
+    assert 'Пауза' in html and 'Перезапустить' not in html
 
 
 def test_pause_keeps_queue_across_restart_and_stop_clears_it(client, settings, store, wiki):

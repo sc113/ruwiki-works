@@ -20,7 +20,7 @@ def count_label(value, one, few, many):
     return many if 11 <= number <= 14 else one if number % 10 == 1 else few if 2 <= number % 10 <= 4 else many
 
 
-def run_metrics(run):
+def run_metrics(run, *, compact=False):
     summary = public_summary(run["summary"])
     if run["status"] == "running":
         terminal = {"edited", "would_edit", "unchanged", "missing", "bot_excluded"}
@@ -52,6 +52,9 @@ def run_metrics(run):
     for metric in metrics:
         if metric.get("added"):
             metric["added_label"] = count_label(metric["added"], "новая", "новые", "новых")
+    if compact:
+        metrics = [metric for metric in metrics if metric['label'] != 'ранее проверено'
+                   and (metric['value'] or metric.get('added') or metric.get('resolved') or metric['label'] == 'проверено')]
     return metrics
 
 
@@ -65,7 +68,7 @@ def run_history(store, selected="", *, page=1, limit=25, started_from=None, star
         entries.append(dict(run={key: run[key] for key in
                             ("id", "processor", "started_at", "finished_at", "status", "kind", "dry_run")},
                             task=task, module=get_processor(task.processor) if task else None,
-                            metrics=run_metrics(run)))
+                            metrics=run_metrics(run, compact=True)))
     return dict(entries=entries, has_next=len(rows) > limit, page=page)
 
 

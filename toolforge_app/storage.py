@@ -395,30 +395,47 @@ class Store:
         """Deduplicate repeated clicks and retain a stable link before execution."""
         with self.observation_transaction() as conn:
             conn.execute(select(state.c.key).where(state.c.key == 'control:obkat').with_for_update()).first()
-            key = 'control:' + processor
-            raw = conn.execute(select(state.c.value).where(state.c.key == key).with_for_update()).scalar()
-            if not raw:
-                conn.execute(insert(state).values(key=key, value=dump(
-                    {'mode': 'active', 'generation': 0, 'at': None, 'by': ''})))
-            elif json.loads(raw)['mode'] != 'active':
-                raise ValueError('Task is paused or stopped')
-            existing = conn.execute(select(run_requests).join(jobs, jobs.c.key == run_requests.c.job_key).where(
-                jobs.c.processor == processor, jobs.c.kind == kind, jobs.c.spacing == spacing).order_by(
-                run_requests.c.requested_at)).mappings().first()
-            if existing:
-                status = conn.execute(select(runs.c.status).where(runs.c.id == existing['run_id'])).scalar() if existing['run_id'] else None
-                if status in {None, 'running'}:
-                    return dict(existing)
-                # A new click after a failed or paused pass creates a new live
-                # journal and replaces only that request's pending retry.
-                conn.execute(delete(jobs).where(jobs.c.key == existing['job_key']))
-            request_id, at = uuid.uuid4().hex, time.time()
-            job_key = processor + ':manual:' + request_id
-            conn.execute(insert(jobs).values(key=job_key, processor=processor, kind=kind, due_at=at,
-                requested_by=requested_by, spacing=spacing))
-            receipt = dict(id=request_id, processor=processor, job_key=job_key, requested_at=at, run_id=None)
-            conn.execute(insert(run_requests).values(**receipt))
-            return receipt
+            return self._request_run(conn, processor, requested_by, kind=kind, spacing=spacing)
+
+    def request_runs(self, processors, requested_by):
+        """Queue one normal pass per active task in a single transaction."""
+        receipts, skipped = [], []
+        with self.observation_transaction() as conn:
+            conn.execute(select(state.c.key).where(state.c.key == 'control:obkat').with_for_update()).first()
+            for processor in dict.fromkeys(processors):
+                try:
+                    receipts.append(self._request_run(conn, processor, requested_by))
+                except ValueError:
+                    skipped.append(processor)
+            if not receipts:
+                raise ValueError('No active tasks')
+        return receipts, skipped
+
+    def _request_run(self, conn, processor, requested_by, *, kind='full', spacing=False):
+        key = 'control:' + processor
+        raw = conn.execute(select(state.c.value).where(state.c.key == key).with_for_update()).scalar()
+        if not raw:
+            conn.execute(insert(state).values(key=key, value=dump(
+                {'mode': 'active', 'generation': 0, 'at': None, 'by': ''})))
+        elif json.loads(raw)['mode'] != 'active':
+            raise ValueError('Task is paused or stopped')
+        existing = conn.execute(select(run_requests).join(jobs, jobs.c.key == run_requests.c.job_key).where(
+            jobs.c.processor == processor, jobs.c.kind == kind, jobs.c.spacing == spacing).order_by(
+            run_requests.c.requested_at)).mappings().first()
+        if existing:
+            status = conn.execute(select(runs.c.status).where(runs.c.id == existing['run_id'])).scalar() if existing['run_id'] else None
+            if status in {None, 'running'}:
+                return dict(existing)
+            # A new click after a failed or paused pass creates a new live
+            # journal and replaces only that request's pending retry.
+            conn.execute(delete(jobs).where(jobs.c.key == existing['job_key']))
+        request_id, at = uuid.uuid4().hex, time.time()
+        job_key = processor + ':manual:' + request_id
+        conn.execute(insert(jobs).values(key=job_key, processor=processor, kind=kind, due_at=at,
+            requested_by=requested_by, spacing=spacing))
+        receipt = dict(id=request_id, processor=processor, job_key=job_key, requested_at=at, run_id=None)
+        conn.execute(insert(run_requests).values(**receipt))
+        return receipt
 
     def run_request(self, request_id=None, *, job_key=None):
         with self.engine.connect() as conn:
