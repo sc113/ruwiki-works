@@ -8,6 +8,7 @@ from ...wiki import RUN_ERRORS, WikiClient, WikiError, bot_edit_block, require_b
 from ..daily_worker import DailyWorker, Controlled, MOSCOW
 from ...schedules import next_daily_time, search_interval
 from ...run_statistics import report_changes, report_snapshot
+from ...edit_comments import dates_comment, rq_comment, unwrap_comment, fit_comment
 from . import TASK_SLUGS
 from .config import get_config
 from .history import History, normalize
@@ -112,15 +113,15 @@ class MaintenanceWorker(DailyWorker):
                         self.event("unchanged", reason, title=title)
                         continue
                     self.checkpoint()
-                    edit_summary = {"maintenance-dates": "Даты установки шаблонов",
-                                    "maintenance-rq": "Замена параметров RQ на шаблоны с датами установки",
-                                    "maintenance-rq-unwrap": "Убрана обёртка RQ с единственного шаблона проблемы"}[self.slug]
-                    edit_summary += ": " + "; ".join(c['template'] + (" — " + c['date'] if c['date'] else "") for c in changes)
+                    edit_summary = {'maintenance-dates': dates_comment, 'maintenance-rq': rq_comment,
+                                    'maintenance-rq-unwrap': unwrap_comment}[self.slug](changes)
+                    self.event('edit_summary', 'Описание правки: ' + edit_summary, title=title,
+                               edit_summary=fit_comment(edit_summary))
                     if dry_run:
                         summary["proposed"] += 1
                         code, message, revision = "would_edit", "Подготовлены изменения без сохранения", base.revision
                     else:
-                        revision = self.wiki.edit_article(base, text, edit_summary.encode("utf-8")[:490].decode("utf-8", errors="ignore"), allowed)
+                        revision = self.wiki.edit_article(base, text, fit_comment(edit_summary), allowed)
                         summary["changed"] += 1
                         code, message = "edited", "Статья обновлена"
                     self.event(code, message, title=title, changes=changes, revision=revision,

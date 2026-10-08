@@ -47,7 +47,8 @@ def update_dates(base, definitions, config, history, event):
             if str(param.name).strip() == "1" and re.fullmatch(r"(?:\d{1,2}\.\d{1,2}\.\d{4}|\d{4}-\d{1,2}-\d{1,2})", str(param.value).strip()):
                 template.remove(param)
         template.add(str(date_params[0].name) if date_params else "дата", found["date"])
-        changes.append(dict(template=name, previous=previous, date=found["date"], revision=found["revision"], section=heading))
+        changes.append(dict(template=name, previous=previous, date=found["date"], revision=found["revision"],
+                            section=heading, section_scoped=scoped, original_section=found.get('section')))
     return str(code), changes, notes
 
 
@@ -78,16 +79,18 @@ def update_rq(base, definitions, rq_definition, config, history, event):
                 for alias in definition["aliases"])
             context = heading if scoped else None
             found = history.find([], context, rq_aliases=rq_definition["aliases"], rq_params=equivalent_params)
+            source_kind = 'rq'
             standalone = history.find(definition["aliases"], context, require_current=False)
             if standalone and (not found or standalone["date"] < found["date"]):
                 found = standalone
+                source_kind = 'standalone'
             if not found:
                 note = "Не удалось определить дату параметра RQ «" + value + "»"
                 notes.append(note)
                 event("date_missing", note)
                 continue
             if target not in prepared or (found["date"], found["revision"]) < (prepared[target]["date"], prepared[target]["revision"]):
-                prepared[target] = dict(found, parameter=value)
+                prepared[target] = dict(found, parameter=value, source_kind=source_kind)
             comments.setdefault(target, []).extend(re.findall(r"<!--.*?-->", str(param.value), flags=re.S))
             removable.append(param)
         if not removable:
@@ -115,7 +118,10 @@ def update_rq(base, definitions, rq_definition, config, history, event):
             changes.append(dict(template=target, previous=str(template.name).strip(),
                                 date=existing_date if target in existing else found["date"],
                                 action="removed_parameter" if target in existing else "inserted_template",
-                                revision=found["revision"], parameter=found["parameter"], section=heading))
+                                revision=found["revision"], parameter=found["parameter"], section=heading,
+                                parameters=list(dict.fromkeys(clean_value(p.value) for p in removable
+                                    if lookup.get(normalize(mapping[clean_value(p.value)]), mapping[clean_value(p.value)]) == target)),
+                                source_kind=found['source_kind'], source_variant=found.get('variant'), source_date=found['date']))
         replacement = Template("Rq" if str(template.name).strip()[:1].isupper() else "rq")
         for param in named:
             # topic is an ordinary preserved parameter; there is no normalization

@@ -2,6 +2,8 @@
 import copy
 import time
 
+from ...edit_comments import sections_comment, fit_comment
+
 from ...schedules import next_daily_time, search_interval
 
 from ...wiki import RUN_ERRORS, WikiClient, WikiError, require_bot_permission
@@ -109,12 +111,14 @@ class SectionWorker(DailyWorker):
                         remember(title, 'conflicting-markers' if issues else 'unchanged', notes[title]['reason'] if issues else reason)
                         continue
                     self.checkpoint()
+                    edit_summary = sections_comment(changes)
+                    self.event('edit_summary', 'Описание правки: ' + edit_summary, title=title,
+                               edit_summary=fit_comment(edit_summary))
                     if dry_run:
                         summary['proposed'] += 1
                         code, message, revision = 'would_edit', 'Проверка: подготовлена замена шаблонов', base.revision
                     else:
-                        revision = self.wiki.edit_article(base, text,
-                            f"Замена [[Шаблон:{source['name']}]] → [[Шаблон:{replacement['name']}]] по содержимому разделов", allowed)
+                        revision = self.wiki.edit_article(base, text, fit_comment(edit_summary), allowed)
                         summary['changed'] += 1
                         code, message = 'edited', 'Шаблоны разделов заменены'
                     self.event(code, message, title=title, revision=revision, changes=changes, diff_before=base.text, diff_after=text)

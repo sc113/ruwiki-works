@@ -2,6 +2,8 @@
 import copy
 import time
 
+from ...edit_comments import translation_comment, fit_comment
+
 from ...schedules import next_daily_time, search_interval
 
 from ...wiki import RUN_ERRORS, WikiClient, WikiError, require_bot_permission
@@ -112,6 +114,10 @@ class TranslationWorker(DailyWorker):
                         remember(title, 'unchanged')
                         continue
                     self.checkpoint()
+                    edit_summary = translation_comment(changes, source_revision=source_revision,
+                                                       talk_title=talk.title if talk else None)
+                    self.event('edit_summary', 'Описание правки: ' + edit_summary, title=title,
+                               edit_summary=fit_comment(edit_summary))
                     revision = base.revision
                     if dry_run:
                         code, message = 'would_edit', 'Проверка: подготовлены параметры перевода'
@@ -122,9 +128,7 @@ class TranslationWorker(DailyWorker):
                             if current.missing or current.revision != talk.revision:
                                 raise WikiError('talk-changed')
                         self.checkpoint()
-                        revision = self.wiki.edit_article(base, text,
-                            'Заполнение языка и оригинала перевода по ' + ('первой правке' if not talk else 'СО') +
-                            f' ([[Special:Diff/{source_revision}|источник]])', allowed)
+                        revision = self.wiki.edit_article(base, text, fit_comment(edit_summary), allowed)
                         summary['changed'] += 1
                         code, message = 'edited', 'Параметры перевода сохранены'
                     self.event(code, message, title=title, revision=revision, changes=changes,

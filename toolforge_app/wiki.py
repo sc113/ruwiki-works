@@ -9,6 +9,7 @@ import requests
 import mwparserfromhell
 
 from .processors.obkat.report import TABLE_TITLE, title_month
+from .edit_comments import fit_comment
 
 
 class WikiError(RuntimeError):
@@ -319,7 +320,7 @@ class WikiClient:
         self.login()
         token = self.request({"action": "query", "meta": "tokens"})["query"]["tokens"]["csrftoken"]
         data = self.request({"action": "edit", "title": base.title, "text": text,
-            "summary": summary, "token": token, "baserevid": base.revision,
+            "summary": fit_comment(summary), "token": token, "baserevid": base.revision,
             "basetimestamp": timestamp(base.edited_at), "starttimestamp": timestamp(time.time()),
             "nocreate": 1, "assert": "user", "assertuser": self.settings.bot_username, "bot": 1,
             "minor" if minor else "notminor": 1, "watchlist": "nochange"}, post=True)
