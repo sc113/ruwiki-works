@@ -9,6 +9,7 @@ from ..daily_worker import DailyWorker, Controlled, MOSCOW
 from ...schedules import next_daily_time, search_interval
 from ...run_statistics import report_changes, report_snapshot
 from ...edit_comments import dates_comment, rq_comment, unwrap_comment, fit_comment
+from ...run_status import completion_status, completion_message
 from . import TASK_SLUGS
 from .config import get_config
 from .history import History, normalize
@@ -204,8 +205,9 @@ class MaintenanceWorker(DailyWorker):
             traceback.print_exc()
         if result_report:
             summary.update(report_changes(before_report, result_report))
-        self.event("finished", "Обработка завершена с ошибками" if failed else "Обработка прервана" if controlled else "Обработка завершена")
-        self.store.finish_run(self.run_id, self.events, summary, result_report, status=controlled or ("failed" if failed else "success"))
+        status = completion_status(controlled or ('failed' if failed else 'success'), summary, result_report)
+        self.event('finished', completion_message(status, summary, result_report))
+        self.store.finish_run(self.run_id, self.events, summary, result_report, status=status)
         self.run_id, self.generation = None, None
         if not controlled:
             # Remaining articles and execution failures wait for the next daily

@@ -65,7 +65,7 @@ def public_run(run):
         if code == 'unchanged' and event.get('error'):
             projected.update(message='Пропущено', tone='warning')
         if code == 'unchanged' and event.get('requires_manual'):
-            projected.update(message='Требует исправления', tone='error')
+            projected.update(message='Требует исправления', tone='warning')
         index = pending.pop(title, None)
         if index is None:
             events.append(projected)

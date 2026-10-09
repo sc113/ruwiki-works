@@ -111,12 +111,12 @@ def test_unwrap_worker_needs_no_history_and_has_its_own_logs(settings, store, wr
     assert not any(event['code'] == 'section_templates' for event in events)
 
 
-def test_unwrap_remaining_category_is_public_manual_error_and_retries_only_next_night(settings, store):
+def test_unwrap_remaining_category_is_public_manual_issue_and_retries_only_next_night(settings, store):
     settings.wiki_write = True
     wiki = MaintenanceWiki(['{{Rq|{{Нет источников}}|topic=X}}'])
     worker = MaintenanceWorker(settings, store, UNWRAP, wiki)
     worker.execute(queued(store, UNWRAP))
-    assert store.list_runs(processor=UNWRAP)[0]['status'] == 'failed' and not wiki.edits
+    assert store.list_runs(processor=UNWRAP)[0]['status'] == 'issues' and not wiki.edits
     assert report(store, UNWRAP)['problems'] == 1
     client = create_app(settings, store).test_client()
     html = client.get('/tasks/' + UNWRAP, follow_redirects=True).get_data(as_text=True)
@@ -126,11 +126,11 @@ def test_unwrap_remaining_category_is_public_manual_error_and_retries_only_next_
     assert store.queue(UNWRAP)[0]['kind'] == 'daily' and store.queue(UNWRAP)[0]['due_at'] > time.time()
 
 
-def test_unwrap_stale_category_after_a_saved_edit_is_also_an_error(settings, store):
+def test_unwrap_stale_category_after_a_saved_edit_is_also_a_manual_issue(settings, store):
     settings.wiki_write = True
     wiki = MaintenanceWiki(['{{Rq|{{Нет источников}}}}'], remains=True)
     MaintenanceWorker(settings, store, UNWRAP, wiki).execute(queued(store, UNWRAP))
-    assert len(wiki.edits) == 1 and store.list_runs(processor=UNWRAP)[0]['status'] == 'failed'
+    assert len(wiki.edits) == 1 and store.list_runs(processor=UNWRAP)[0]['status'] == 'issues'
     assert report(store, UNWRAP)['problems'] == 1
     wiki.remains = False
     refresh_inventory(wiki, store, UNWRAP)

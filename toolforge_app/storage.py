@@ -9,6 +9,7 @@ from sqlalchemy import (Boolean, Column, Float, Integer, MetaData, String, Table
                         Text, create_engine, delete, insert, select, update)
 from sqlalchemy.dialects.mysql import DOUBLE, LONGTEXT
 from sqlalchemy.exc import IntegrityError
+from .run_status import normalize_run, status_expression
 
 metadata = MetaData()
 large_text = Text().with_variant(LONGTEXT(), "mysql")
@@ -470,8 +471,7 @@ class Store:
             if action in {"stop", "restart"}:
                 conn.execute(delete(jobs).where(jobs.c.processor == processor))
             if action == "restart":
-                conn.execute(insert(jobs).values(key="manual:restart" if processor == "obkat" else processor + ":manual:restart", processor=processor,
-                    kind="full", due_at=now, requested_by=requested_by))
+                self._request_run(conn, processor, requested_by)
                 keys = ("last_reconcile", "worker_error") if processor == "obkat" else (processor + ":worker_error",)
                 conn.execute(delete(state).where(state.c.key.in_(keys)))
         return value
@@ -518,9 +518,10 @@ class Store:
         run = self.run(run_id)
         if run:
             report = annotate_report(self, run['processor'], report)
+        result = normalize_run(dict(status=status, events=dump(events), summary=dump(summary), report=dump(report)))
         with self.engine.begin() as conn:
             conn.execute(update(runs).where(runs.c.id == run_id).values(
-                finished_at=time.time(), status=status, events=dump(events),
+                finished_at=time.time(), status=result['status'], events=result['events'],
                 summary=dump(summary), report=dump(report), table_text=table_text))
 
     def update_progress(self, run_id, events):
@@ -553,14 +554,14 @@ class Store:
             if started_until is not None:
                 statement = statement.where(runs.c.started_at < started_until)
             if status:
-                statement = statement.where(runs.c.status == status)
-            return [dict(r) for r in conn.execute(statement.order_by(
+                statement = statement.where(status_expression(runs) == status)
+            return [normalize_run(r) for r in conn.execute(statement.order_by(
                 runs.c.started_at.desc()).offset(offset).limit(limit)).mappings()]
 
     def run(self, run_id):
         with self.engine.connect() as conn:
             row = conn.execute(select(runs).where(runs.c.id == run_id)).mappings().first()
-            return dict(row) if row else None
+            return normalize_run(row) if row else None
 
     def lease_active(self, processor, now=None):
         with self.engine.connect() as conn:

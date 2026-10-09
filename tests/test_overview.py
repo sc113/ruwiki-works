@@ -94,3 +94,29 @@ def test_month_end_predicts_moscow_time_and_handles_year_rollover(settings):
     assert next_month_end(settings, before) == expected
     december = datetime(2026, 12, 31, 23, 31, tzinfo=settings.zone).timestamp()
     assert next_month_end(settings, december) == datetime(2027, 1, 31, 23, 30, tzinfo=settings.zone).timestamp()
+
+
+def test_overview_separates_live_search_from_disabled_automatic_execution(settings, store, wiki):
+    import time
+    now = time.time()
+    store.set_state('service:executor', {'enabled': False})
+    store.set_state('monitor_heartbeat', now)
+    store.set_state('last_poll', now - 100)
+    store.enqueue('page:example', 'page', now - 1000, title=wiki.title)
+    card = build_overview(settings, store, now)['cards'][0]
+    assert card['search_online'] and card['search_status'] == 'Поиск работает'
+    assert card['next_search'] == now + 200
+    assert card['status_label'] == 'Обработка выключена' and not card['automatic_enabled']
+    client = create_app(settings, store).test_client()
+    for path in ('/', '/processors/obkat'):
+        html = client.get(path).get_data(as_text=True)
+        assert 'Готова к обработке' in html and 'Автозапуск выключен' in html
+        assert 'Поиск работает' in html
+        assert ('Следующая проверка:' if path == '/' else 'следующая в') in html
+
+
+def test_overdue_enabled_run_shows_queue_instead_of_yesterdays_date(settings, store):
+    import time
+    store.enqueue('page:example', 'page', time.time() - 86400)
+    html = create_app(settings, store).test_client().get('/').get_data(as_text=True)
+    assert 'В очереди' in html and 'Автозапуск выключен' not in html

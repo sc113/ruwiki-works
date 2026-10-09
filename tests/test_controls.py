@@ -83,7 +83,7 @@ def test_command_during_fetch_prevents_edits_and_records_the_run(settings, store
     assert store.list_runs()[0]["status"] == status
     assert len(store.queue()) == queue_count
     if action == "restart":
-        assert store.queue()[0]["key"] == "manual:restart"
+        assert store.run_request(job_key=store.queue()[0]["key"])
 
 
 def test_pause_after_a_write_preserves_the_actual_edit_and_skips_index(settings, store, wiki):
@@ -138,7 +138,7 @@ def test_restart_before_execution_cannot_run_an_obsolete_job(settings, store, wi
     store.change_control("obkat", "restart", "admin")
     Worker(settings, store, wiki).execute(old_job)
     assert not store.list_runs() and not wiki.edits
-    assert len(store.queue()) == 1 and store.queue()[0]["key"] == "manual:restart"
+    assert len(store.queue()) == 1 and store.run_request(job_key=store.queue()[0]["key"])
 
 
 def test_real_api_checks_stop_between_token_fetch_and_edit(settings, store):

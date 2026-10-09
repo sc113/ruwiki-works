@@ -9,6 +9,7 @@ from .schedules import get_schedule, schedule_fields, next_daily_time, next_mont
 from .execution import ready_jobs
 from .issues import annotate_report
 from .runtime import execution_settings, service_enabled
+from .health import component_health
 
 OVERVIEW = Processor("overview", "Обзор", "Обзор", "Состояние всех задач", True)
 
@@ -22,6 +23,7 @@ def build_overview(settings, store, now=None):
     settings = execution_settings(settings, store)
     now = time.time() if now is None else now
     cards = []
+    monitor = component_health(settings, store, 'monitor', now)
     waiting = ready_jobs(store, now, exclude_running=True)
     active_runs = [run for run in store.list_runs(20, processor=None, exclude_import=True) if run["status"] == "running"]
     for task in TASKS:
@@ -65,7 +67,8 @@ def build_overview(settings, store, now=None):
         failed = latest and latest["status"] == "failed" and not (
             control.get("action") == "restart" and latest["started_at"] < control["at"])
         status = (mode if mode != "active" else "running" if running else "queued" if position
-                  else "error" if error or failed else "scheduled" if pending else
+                  else "error" if error or failed else "issues" if latest and latest['status'] == 'issues'
+                  else "scheduled" if pending else
                   "success" if latest and latest["status"] == "success" else "waiting" if online else "offline")
         if mode == 'active' and not running and not position and not service_enabled(store, 'executor'):
             status = 'paused'
@@ -73,19 +76,31 @@ def build_overview(settings, store, now=None):
                   "stopped": "Остановка запрошена" if running else "Остановлена",
                   "error": "Ошибка", "running": "В работе", "scheduled": "Запланирована",
                   "queued": "Ожидает очереди",
+                  "issues": "Осталось проблем",
                   "success": "Выполнена",
                   "waiting": "Ожидает запуска", "offline": "Ожидает запуска"}
         if mode == 'active' and not running and not position and not service_enabled(store, 'executor'):
             labels['paused'] = 'Обработка выключена'
+        last_search = report['latest_check'] if maintenance else store.get_state('last_poll')
+        search_enabled = monitor['enabled'] and mode != 'stopped'
+        search_online = search_enabled and monitor['online'] and not (
+            store.get_state(prefix + 'monitor_error') if maintenance else store.get_state('worker_error'))
+        search_status = ('Поиск остановлен' if mode == 'stopped' else 'Поиск выключен' if not monitor['enabled']
+                         else 'Поиск работает' if search_online else 'Поиск недоступен')
+        next_job = min(pending, key=lambda job: job['due_at']) if pending else None
         cards.append({"task": task, "processor": processor, "enabled": True, "report": report,
             "last_run": latest, "snapshot": imports[0] if imports and imports[0]["kind"] == "import" else None,
-            "next_job": min(pending, key=lambda job: job["due_at"]) if pending else None,
+            "next_job": next_job,
             "queued": len(pending), "online": online, "error": error,
             "pending": pending,
             "control": control, "running": running, "status": status, "status_label": labels[status],
             "queue_position": position, "progress": progress,
             "schedule": schedule, "schedule_fields": schedule_fields(settings, store, task.slug),
-            "last_search": report['latest_check'] if maintenance else store.get_state('last_poll'),
+            "last_search": last_search,
+            "next_search": last_search + schedule['search_minutes'] * 60 if last_search and search_enabled else None,
+            "search_status": search_status, "search_online": search_online,
+            "automatic_enabled": service_enabled(store, 'executor'),
+            "manual_next": bool(next_job and store.run_request(job_key=next_job['key'])),
             "next_scheduled": next_daily_time(schedule["run_time"], now) if maintenance else next_month_end(settings, now, store),
             "run_time": config["run_time"] if maintenance else None,
             "dry_run": bool(latest['dry_run']) if running else (

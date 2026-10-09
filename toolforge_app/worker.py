@@ -10,7 +10,7 @@ from .processors.obkat.report import (TABLE_TITLE, build_report, month_range,
 from .processors.obkat.table import generate_wiki_table
 from .storage import dump
 from .execution import execution_slot, ready_jobs
-from .schedules import after_edit_due, get_schedule, month_end_deadline
+from .schedules import after_edit_due, get_schedule, month_end_deadline, search_interval
 from .run_statistics import report_changes, report_snapshot
 from .wiki import RUN_ERRORS, WikiClient, WikiError, bot_may_edit, epoch
 from .runtime import execution_settings, service_enabled, job_enabled
@@ -72,10 +72,15 @@ class Worker:
     def poll(self, now):
         cursor = self.store.get_state("rc_cursor", now - 60)
         # Reconciliation catches older changes if RecentChanges has expired.
-        start = max(cursor - 2, now - 29 * 86400)
+        # RecentChanges can arrive after its timestamp has already passed the
+        # cursor. Replayed revisions are deduplicated by observe().
+        start = max(cursor - max(600, search_interval(self.settings, self.store, 'obkat')), now - 29 * 86400)
         for change in self.wiki.changes(start, now):
             self.renew()
             self.observe(change["title"], change["revid"], epoch(change["timestamp"]), now)
+        # Check revision IDs directly as well: feed lag, deleted jobs and a
+        # restart must not hide an unprocessed change until the next day.
+        self.reconcile(now)
         self.store.set_state("rc_cursor", now)
         self.store.set_state("last_poll", now)
 
@@ -163,7 +168,7 @@ class Worker:
             self.renew()
             self.check_control()
             revision = self.wiki.edit(base, proposed,
-                "ОБКАТ: зачёркивание завершённых номинаций" + (" и ежемесячное форматирование" if spacing else ""))
+                "Автоформатирование и зачёркивание завершённых" if spacing else "Зачёркивание завершённых номинаций")
             actual = proposed
             self.event("edited", "Страница обновлена", title, revision=revision,
                 diff_before=base.text, diff_after=actual)
@@ -193,7 +198,7 @@ class Worker:
             self.event("table_excluded", "Таблица не изменена: на странице запрещена работа этого бота", TABLE_TITLE)
         elif self.settings.wiki_write:
             self.check_control()
-            revision = self.wiki.edit(base, table, "ОБКАТ: обновление таблицы открытых номинаций")
+            revision = self.wiki.edit(base, table, "Обновление таблицы открытых номинаций")
             self.event("table_edited", "Таблица открытых номинаций обновлена", TABLE_TITLE, revision=revision)
         else:
             self.event("table_would_edit", "Проверка: подготовлено обновление таблицы", TABLE_TITLE)
@@ -305,7 +310,6 @@ class Worker:
                 retry = self.store.get_state("obkat:observer_retry") or {}
                 if now < retry.get("due_at", 0):
                     return False
-                from .schedules import search_interval
                 if now - self.store.get_state("last_poll", 0) >= search_interval(self.settings, self.store, 'obkat'):
                     self.poll(now)
                 if now - self.store.get_state("last_reconcile", 0) >= 86400:

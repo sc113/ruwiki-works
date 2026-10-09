@@ -43,6 +43,19 @@ def test_paused_executor_stays_online_and_leaves_queue_intact(settings, store):
     assert not any(row['active_key'] == 'service:executor' for row in store.list_notifications())
 
 
+def test_explicit_restart_runs_while_automatic_executor_is_off(settings, store, wiki):
+    store.set_state('service:executor', {'enabled': False, 'at': time.time() - 1})
+    store.change_control('obkat', 'restart', 'admin')
+    job = store.queue()[0]
+    receipt = store.run_request(job_key=job['key'])
+    assert receipt and receipt['run_id'] is None
+    Worker(settings, store, wiki).tick()
+    run = store.list_runs()[0]
+    assert run['status'] == 'success' and run['dry_run']
+    assert store.run_request(receipt['id'])['run_id'] == run['id']
+    assert not store.queue() and not service_enabled(store, 'executor')
+
+
 def test_disabled_monitor_sends_heartbeat_without_network_or_scheduling(settings, store):
     store.set_state('service:monitor', {'enabled': False})
     monitor = Monitor(settings, store)

@@ -1,9 +1,11 @@
 """Shared service state and durable incident notifications from trusted evidence."""
+import json
 import time
 
 from .processors import TASKS
 from .schedules import get_schedule, next_daily_time
 from .runtime import service_enabled
+from .run_status import remaining_problems
 
 
 def component_health(settings, store, component, now=None):
@@ -42,6 +44,10 @@ def system_status(settings, store, now=None):
         target = '/processors/' + task.processor + '?task=' + task.slug + '&view=problems#reports'
         if latest and latest['status'] == 'running':
             running.append(task.title)
+        if latest and latest['status'] == 'issues':
+            count = remaining_problems(json.loads(latest['summary']), json.loads(latest['report']))
+            alert('run:' + task.slug, task.title + ': осталось проблем',
+                  f'Обработка завершена. Требуют ручного исправления: {count}.', target)
         if latest and latest['status'] in {'failed', 'interrupted'} and not (
                 control.get('action') == 'restart' and latest['started_at'] < control['at']):
             alert('run:' + task.slug, task.title + ': ' + ('ошибка' if latest['status'] == 'failed' else 'проход прерван'),

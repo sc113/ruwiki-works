@@ -31,9 +31,8 @@ from .connections import (ERRORS as CONNECTION_ERRORS, FIELDS as CONNECTION_FIEL
                           record_check, save_credentials)
 from .wiki import WikiError
 from .runtime import execution_settings, service_enabled, writes_enabled
+from .run_status import STATUS_LABELS
 
-STATUS_LABELS = {"success": "Завершён", "failed": "Ошибка", "running": "В работе", "interrupted": "Прерван",
-                 "paused": "Приостановлен", "stopped": "Остановлен"}
 KIND_LABELS = {"page": "После правки", "full": "Ручной запуск", "month_end": "Конец месяца",
                "import": "Локальный снимок", "bootstrap": "Первичная синхронизация", "daily": "По расписанию",
                "recheck": "Проверка с нуля", "article": "Повтор статьи"}

@@ -199,3 +199,54 @@ def test_bootstrap_covers_missing_months(settings, store, wiki):
     assert any(p["missing"] for p in store.all_pages())
     assert store.get_state("live_sync_initialized")
     assert not store.queue()
+
+
+def test_poll_recovers_a_change_missing_from_recentchanges_and_keeps_its_deadline(settings, store, wiki):
+    worker = Worker(settings, store, wiki)
+    now = time.time()
+    edited = now - 180
+    store.save_page(wiki.title, month=settings.start_month, revision=10, origin='wiki', text='', issues='[]')
+    wiki.data[wiki.title] = Revision(wiki.title, 11, edited, wiki.data[wiki.title].text)
+    wiki.changes = Mock(return_value=[])
+    store.set_state('rc_cursor', now - 300)
+    worker.poll(now)
+    job = store.queue()[0]
+    assert job['revision'] == 11 and job['due_at'] == edited + 15 * 60
+    # Clearing an observed job must not permanently lose its revision.
+    store.acknowledge(job)
+    worker.poll(now + 300)
+    assert store.queue()[0]['due_at'] == edited + 15 * 60
+    worker.poll(now + 600)
+    assert store.queue()[0]['due_at'] == edited + 15 * 60
+    assert not wiki.edits
+
+
+def test_poll_overlaps_feed_and_does_not_advance_cursor_when_revision_check_fails(settings, store, wiki):
+    import pytest
+    now = time.time()
+    store.set_state('rc_cursor', now - 300)
+    wiki.changes = Mock(return_value=[])
+    wiki.revisions = Mock(side_effect=WikiError('network'))
+    with pytest.raises(WikiError):
+        Worker(settings, store, wiki).poll(now)
+    assert wiki.changes.call_args.args == (now - 900, now)
+    assert store.get_state('rc_cursor') == now - 300 and store.get_state('last_poll') is None
+
+
+def test_new_edit_before_due_run_extends_quiet_period_without_publishing_new_text(settings, store, wiki):
+    settings.wiki_write = True
+    now = time.time()
+    worker = Worker(settings, store, wiki)
+    worker.observe(wiki.title, 10, now - 1000, now - 1000)
+    wiki.data[wiki.title] = Revision(wiki.title, 11, now - 60, wiki.data[wiki.title].text)
+    worker.execute(store.queue()[0])
+    assert not wiki.edits
+    assert store.queue()[0]['revision'] == 11 and store.queue()[0]['due_at'] == now - 60 + 15 * 60
+    assert json.loads(store.list_runs()[0]['summary'])['deferred'] == 1
+
+
+def test_obkat_edit_comments_use_action_names_without_abbreviation(settings, store, wiki):
+    settings.wiki_write = True
+    Worker(settings, store, wiki).execute(queued(store, wiki.title, 'full', spacing=True))
+    assert [comment for _, _, comment in wiki.edits] == [
+        'Автоформатирование и зачёркивание завершённых', 'Обновление таблицы открытых номинаций']

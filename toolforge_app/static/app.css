@@ -632,6 +632,7 @@ main {
 }
 .badge.paused,
 .badge.offline,
+.badge.issues,
 .badge.interrupted {
   color: var(--amber);
 }
@@ -2151,3 +2152,4 @@ select {
   .profile-menu small { display: none; }
   .account { flex-wrap: wrap; }
 }
+.search-timing.search-online { color: var(--green); }
