@@ -124,12 +124,12 @@ def test_fast_pause_and_resume_still_interrupts_the_old_pass(settings, store, wi
 def test_stopped_worker_skips_network_and_paused_worker_observes_without_executing(settings, store, wiki):
     worker = Worker(settings, store, wiki)
     store.change_control("obkat", "stop", "admin")
-    wiki.changes = Mock(return_value=[])
+    wiki.revisions = Mock(wraps=wiki.revisions)
     worker.tick()
-    wiki.changes.assert_not_called()
+    wiki.revisions.assert_not_called()
     store.change_control("obkat", "pause", "admin")
     worker.tick()
-    wiki.changes.assert_called_once()
+    wiki.revisions.assert_called_once()
     assert store.queue() and not store.list_runs() and not wiki.edits
 
 

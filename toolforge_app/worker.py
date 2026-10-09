@@ -5,14 +5,15 @@ from datetime import datetime
 
 from .processors.obkat.analyzer import analyze_text
 from .processors.obkat.formatter import format_text
-from .processors.obkat.report import (TABLE_TITLE, build_report, month_range,
+from .processors.obkat.report import (TABLE_TITLE, month_range,
                                      page_title, title_month)
+from .processors.obkat.service import report as current_report
 from .processors.obkat.table import generate_wiki_table
 from .storage import dump
 from .execution import execution_slot, ready_jobs
 from .schedules import after_edit_due, get_schedule, month_end_deadline, search_interval
 from .run_statistics import report_changes, report_snapshot
-from .wiki import RUN_ERRORS, WikiClient, WikiError, bot_may_edit, epoch
+from .wiki import RUN_ERRORS, WikiClient, WikiError, bot_may_edit
 from .runtime import execution_settings, service_enabled, job_enabled
 
 
@@ -53,49 +54,48 @@ class Worker:
         if control["mode"] != "active" or control["generation"] != self.execution_generation:
             raise RunControlled(control["mode"])
 
-    def observe(self, title, revision, edited_at, now):
+    def observe(self, title, revision, edited_at, now, *, pending_jobs=None, quiet_minutes=None):
         month = title_month(title)
         if not month or month < self.settings.start_month:
             return
-        cached = self.store.page(title)
-        if cached and cached["revision"] == revision and cached["origin"] == "wiki":
+        headers = self.store.page_headers(title=title)
+        cached = headers[0] if headers else None
+        if cached and cached["revision"] >= revision and cached["origin"] == "wiki":
             return
-        # Identical events are replayed at the polling boundary. Keep a retry's
-        # backoff instead of resetting it on every poll.
-        pending = next((j for j in self.store.queue() if j["key"] == "page:" + month), None)
+        # Rechecking a revision must preserve the pending job's API backoff.
+        if pending_jobs is None:
+            pending_jobs = {job["key"]: job for job in self.store.queue()}
+        pending = pending_jobs.get("page:" + month)
         if pending and pending["revision"] >= revision:
             return
-        delay = get_schedule(self.settings, self.store, "obkat")["quiet_minutes"]
+        delay = quiet_minutes if quiet_minutes is not None else get_schedule(self.settings, self.store, "obkat")["quiet_minutes"]
         self.store.enqueue("page:" + month, "page", after_edit_due(delay, edited_at, now),
             title=title, revision=revision)
 
     def poll(self, now):
-        cursor = self.store.get_state("rc_cursor", now - 60)
-        # Reconciliation catches older changes if RecentChanges has expired.
-        # RecentChanges can arrive after its timestamp has already passed the
-        # cursor. Replayed revisions are deduplicated by observe().
-        start = max(cursor - max(600, search_interval(self.settings, self.store, 'obkat')), now - 29 * 86400)
-        for change in self.wiki.changes(start, now):
-            self.renew()
-            self.observe(change["title"], change["revid"], epoch(change["timestamp"]), now)
-        # Check revision IDs directly as well: feed lag, deleted jobs and a
-        # restart must not hide an unprocessed change until the next day.
+        # Only the latest revision and edit time matter for the quiet period.
+        # Direct checks also recover changes after any length of downtime.
         self.reconcile(now)
-        self.store.set_state("rc_cursor", now)
         self.store.set_state("last_poll", now)
 
     def reconcile(self, now):
         titles = [page_title(m) for m in month_range(self.settings.start_month,
                   datetime.fromtimestamp(now, self.settings.zone))]
+        headers = {row["title"]: row for row in self.store.page_headers()}
+        pending = {job["key"]: job for job in self.store.queue()}
+        delay = get_schedule(self.settings, self.store, "obkat")["quiet_minutes"]
         for offset in range(0, len(titles), 20):
             self.renew()
             for revision in self.wiki.revisions(titles[offset:offset + 20]):
-                cached = self.store.page(revision.title)
+                cached = headers.get(revision.title)
                 if revision.missing:
-                    if cached and not cached["missing"]:
+                    if cached and not cached["missing"] and "page:" + cached["month"] not in pending:
                         self.store.enqueue("page:" + cached["month"], "page", now, title=revision.title)
-                else:
-                    self.observe(revision.title, revision.revision, revision.edited_at, now)
+                elif not cached or cached["origin"] != "wiki" or cached["revision"] < revision.revision:
+                    # Refresh metadata only for changed pages. The executor may
+                    # have saved this revision while the API request was pending.
+                    self.observe(revision.title, revision.revision, revision.edited_at, now,
+                                 pending_jobs=pending, quiet_minutes=delay)
         self.store.set_state("last_reconcile", now)
 
     def schedule_month_end(self, now):
@@ -226,7 +226,7 @@ class Worker:
         self.execution_generation = control["generation"]
         self.events = []
         self.completed_pages = []
-        before_report = report_snapshot(build_report(self.store.all_pages()))
+        before_report = report_snapshot(current_report(self.store))
         self.run_id = self.store.start_run(job["kind"], job["requested_by"],
             dry_run=not self.settings.wiki_write, spacing=job["spacing"], job=job)
         failed, table, controlled = False, "", None
@@ -264,7 +264,7 @@ class Worker:
             # No tokens, cookies, passwords or full request parameters in public logs.
             import traceback
             traceback.print_exc()
-        report = build_report(self.store.all_pages())
+        report = current_report(self.store)
         summary = {"checked": sum(e["code"] in {"edited", "would_edit", "unchanged", "missing", "bot_excluded"} for e in self.events),
             "changed": sum(e["code"] == "edited" for e in self.events),
             "proposed": sum(e["code"] == "would_edit" for e in self.events),
@@ -310,15 +310,17 @@ class Worker:
                 retry = self.store.get_state("obkat:observer_retry") or {}
                 if now < retry.get("due_at", 0):
                     return False
+                checked = False
                 if now - self.store.get_state("last_poll", 0) >= search_interval(self.settings, self.store, 'obkat'):
                     self.poll(now)
+                    checked = True
                 if now - self.store.get_state("last_reconcile", 0) >= 86400:
                     self.reconcile(now)
+                    checked = True
                 self.retime_pages(now)
-                from .issues import annotate_report
-                annotate_report(self.store, 'obkat', build_report(self.store.all_pages()))
-                self.store.set_state("worker_error", None)
-                self.store.set_state("obkat:observer_retry", None)
+                if checked or retry:
+                    self.store.set_state("worker_error", None)
+                    self.store.set_state("obkat:observer_retry", None)
                 self.schedule_month_end(now)
                 return True
             except WikiError as exc:

@@ -171,17 +171,6 @@ class WikiClient:
     def fetch(self, title):
         return self.revisions([title], content=True)[0]
 
-    def changes(self, start, end):
-        params = {"action": "query", "list": "recentchanges", "rcnamespace": 4,
-            "rcprop": "title|ids|timestamp|user", "rctype": "edit|new",
-            "rcdir": "newer", "rcstart": timestamp(start), "rcend": timestamp(end), "rclimit": 500}
-        while True:
-            data = self.request(params)
-            yield from data["query"]["recentchanges"]
-            if "continue" not in data:
-                break
-            params.update(data["continue"])
-
     def category_members(self, title, *, kind="page", namespace=0, start_prefix=""):
         params = {"action": "query", "list": "categorymembers", "cmtitle": title,
                   "cmtype": kind, "cmnamespace": namespace, "cmlimit": 500, "cmprop": "ids|title"}

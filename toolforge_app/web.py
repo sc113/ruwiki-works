@@ -17,8 +17,9 @@ from flask import (Flask, Response, abort, flash, redirect, render_template,
 from .config import Settings
 from .overview import OVERVIEW, build_overview
 from .processors import PROCESSORS, TASKS, Processor, get_processor, get_task
-from .processors.obkat.report import (CHECKS, build_report, fix_guidance,
+from .processors.obkat.report import (CHECKS, fix_guidance,
                                       open_nominations, plain_title, report_txt, wiki_url)
+from .processors.obkat.service import report as obkat_report
 from .storage import Store
 from .processors.daily import TASK_SLUGS, fields, form_value, get_config, parse_form
 from .processors.logs import public_run
@@ -531,7 +532,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             history_page=history_page, history_has_next=len(history) > 25, open_count=len(opened),
             queue=task_state["pending"], task_state=task_state,
             control=store.control(),
-            local_snapshot=any(p["origin"] == "import" for p in store.all_pages()))
+            local_snapshot=any(p["origin"] == "import" for p in store.page_headers()))
 
     @app.route("/runs/<run_id>")
     @app.route('/runs/<run_id>/fragment', endpoint='run_fragment')
@@ -627,7 +628,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             if not report:
                 abort(409)
         else:
-            report = build_report(store.all_pages())
+            report = obkat_report(store)
         if extension == "json":
             content, mime = json.dumps(report, ensure_ascii=False, indent=2), "application/json"
         elif extension == "txt":

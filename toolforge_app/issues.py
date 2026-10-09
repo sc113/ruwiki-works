@@ -4,12 +4,13 @@ import json
 from collections import Counter
 
 
-def annotate_report(store, slug, report):
+def annotate_report(store, slug, report, *, scopes=None):
     if not report or not report.get('latest_check'):
         return report
     entries, counts = [], Counter()
     obkat = slug == 'obkat'
-    scopes = {p['title']: p['checked_at'] for p in store.all_pages()} if obkat else {slug: report['latest_check']}
+    if scopes is None:
+        scopes = {p['title']: p['checked_at'] for p in store.page_headers()} if obkat else {slug: report['latest_check']}
     items = [row for row in report.get('items', []) if row['section'] == 'problems'] if obkat else report.get('manual', [])
     for row in items:
         identity = (row['page'], row['type'], row.get('display_title', ''), row.get('parent_title', '')) if obkat else (row['title'], row['reason'])

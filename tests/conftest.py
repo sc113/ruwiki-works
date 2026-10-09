@@ -35,7 +35,6 @@ class FakeWiki:
             TABLE_TITLE: Revision(TABLE_TITLE, 20, time.time() - 3600, "Old index"),
         }
         self.edits = []
-        self.recent = []
         self.conflict = False
         self.table_error = False
         self.poll_error = False
@@ -46,12 +45,9 @@ class FakeWiki:
         return self.data.get(title, Revision(title, missing=True))
 
     def revisions(self, titles, content=False):
-        return [self.fetch(title) for title in titles]
-
-    def changes(self, start, end):
         if self.poll_error:
             raise WikiError("network")
-        return self.recent
+        return [self.fetch(title) for title in titles]
 
     def edit(self, base, text, summary):
         if self.conflict:

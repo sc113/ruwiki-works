@@ -3,11 +3,10 @@ import json
 import time
 
 from .processors import TASKS, Processor, get_processor
-from .processors.obkat.report import build_report
+from .processors.obkat.service import report as obkat_report
 from .processors.daily import TASK_SLUGS as DAILY_TASKS, get_config, report as daily_report
 from .schedules import get_schedule, schedule_fields, next_daily_time, next_month_end_time
 from .execution import ready_jobs
-from .issues import annotate_report
 from .runtime import execution_settings, service_enabled
 from .health import component_health
 
@@ -36,7 +35,7 @@ def build_overview(settings, store, now=None):
         maintenance = task.slug in DAILY_TASKS
         config = get_config(store, task.slug) if maintenance else None
         schedule = get_schedule(settings, store, task.slug)
-        report = daily_report(store, task.slug, config) if maintenance else annotate_report(store, task.slug, build_report(store.all_pages(processor.slug)))
+        report = daily_report(store, task.slug, config) if maintenance else obkat_report(store)
         history = store.list_runs(1, processor=task.slug, exclude_import=True, details=False)
         imports = store.list_runs(1, processor=task.slug, details=False)
         latest = history[0] if history else None

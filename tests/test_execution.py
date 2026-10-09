@@ -14,6 +14,7 @@ from toolforge_app.processors.maintenance.service import MaintenanceWorker
 from toolforge_app.storage import Store, leases
 from toolforge_app.web import create_app
 from toolforge_app.worker import Worker
+from toolforge_app.wiki import Revision
 from test_maintenance import MaintenanceWiki, configure, queued
 from test_web import set_session
 
@@ -113,8 +114,7 @@ def test_global_slot_blocks_another_process_but_not_edit_observation(settings, s
                 # A separate observer reads edits while the execution lease is held.
                 store.set_state('last_reconcile', time.time())
                 now = time.time()
-                wiki.recent = [{'title': wiki.title, 'revid': 11,
-                                'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now))}]
+                wiki.data[wiki.title] = Revision(wiki.title, 11, now, wiki.data[wiki.title].text)
                 assert Worker(settings, another_store, wiki).watch(now)
                 page_job = store.queue()[0]
                 assert page_job['revision'] == 11 and page_job['due_at'] > now + settings.quiet_minutes * 60 - 1

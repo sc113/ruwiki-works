@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 from sqlalchemy import insert
 
-from toolforge_app.processors.obkat.report import build_report, page_title
+from toolforge_app.processors.obkat.report import month_range, page_title
 from toolforge_app.storage import dump, jobs
 from toolforge_app.wiki import Revision, WikiError
 from toolforge_app.worker import Worker
@@ -144,29 +144,29 @@ def test_month_end_scheduled_once_in_moscow_and_catches_up(settings, store, wiki
     assert {j["key"] for j in store.queue()} == {"month_end:2026-10", "month_end:2026-11"}
 
 
-def test_network_failure_keeps_cursor_and_jobs(settings, store, wiki):
-    store.set_state("rc_cursor", time.time() - 100)
-    cursor = store.get_state("rc_cursor")
+def test_network_failure_keeps_last_successful_check_and_jobs(settings, store, wiki):
+    last_check = time.time() - settings.poll_seconds - 1
+    store.set_state("last_poll", last_check)
     queued(store, wiki.title)
     wiki.poll_error = True
     Worker(settings, store, wiki).tick()
-    assert store.get_state("rc_cursor") == cursor
+    assert store.get_state("last_poll") == last_check
     assert len(store.queue()) == 1 and not store.list_runs()
     assert store.get_state("worker_error")["code"] == "network"
 
 
 def test_failed_observer_backs_off_instead_of_polling_every_worker_tick(settings, store, wiki):
     now = time.time()
-    wiki.changes = Mock(side_effect=WikiError('network'))
+    wiki.revisions = Mock(side_effect=WikiError('network'))
     Worker(settings, store, wiki).watch(now)
     assert store.get_state('obkat:observer_retry')['due_at'] == now + 60
     restarted = Worker(settings, store, wiki)
     restarted.watch(now + 5)
-    wiki.changes.assert_called_once()
+    wiki.revisions.assert_called_once()
     restarted.watch(now + 60)
-    assert wiki.changes.call_count == 2
+    assert wiki.revisions.call_count == 2
     assert store.get_state('obkat:observer_retry')['due_at'] == now + 180
-    wiki.changes = Mock(return_value=[])
+    wiki.revisions = Mock(return_value=[])
     restarted.watch(now + 180)
     assert store.get_state('obkat:observer_retry') is None
     assert store.get_state('worker_error') is None
@@ -177,14 +177,14 @@ def test_manual_job_starts_between_wiki_polls(settings, store, wiki):
     store.set_state("last_poll", now)
     store.set_state("last_reconcile", now)
     store.set_state("live_sync_initialized", True)
-    wiki.changes = Mock(return_value=[])
+    wiki.revisions = Mock(wraps=wiki.revisions)
     queued(store, wiki.title, "full")
     worker = Worker(settings, store, wiki)
     worker.tick(now + 5)
     assert store.list_runs()[0]["status"] == "success"
-    wiki.changes.assert_not_called()
+    wiki.revisions.assert_not_called()
     worker.tick(now + settings.poll_seconds + 1)
-    wiki.changes.assert_called_once()
+    wiki.revisions.assert_called_once()
 
 
 def test_bootstrap_covers_missing_months(settings, store, wiki):
@@ -201,14 +201,13 @@ def test_bootstrap_covers_missing_months(settings, store, wiki):
     assert not store.queue()
 
 
-def test_poll_recovers_a_change_missing_from_recentchanges_and_keeps_its_deadline(settings, store, wiki):
+def test_poll_recovers_a_change_after_downtime_and_keeps_its_deadline(settings, store, wiki):
     worker = Worker(settings, store, wiki)
     now = time.time()
     edited = now - 180
     store.save_page(wiki.title, month=settings.start_month, revision=10, origin='wiki', text='', issues='[]')
     wiki.data[wiki.title] = Revision(wiki.title, 11, edited, wiki.data[wiki.title].text)
-    wiki.changes = Mock(return_value=[])
-    store.set_state('rc_cursor', now - 300)
+    store.set_state('last_poll', now - 60 * 86400)
     worker.poll(now)
     job = store.queue()[0]
     assert job['revision'] == 11 and job['due_at'] == edited + 15 * 60
@@ -221,16 +220,85 @@ def test_poll_recovers_a_change_missing_from_recentchanges_and_keeps_its_deadlin
     assert not wiki.edits
 
 
-def test_poll_overlaps_feed_and_does_not_advance_cursor_when_revision_check_fails(settings, store, wiki):
+def test_failed_revision_check_does_not_advance_successful_check_time(settings, store, wiki):
     import pytest
     now = time.time()
-    store.set_state('rc_cursor', now - 300)
-    wiki.changes = Mock(return_value=[])
+    store.set_state('last_poll', now - 300)
+    store.set_state('last_reconcile', now - 300)
     wiki.revisions = Mock(side_effect=WikiError('network'))
     with pytest.raises(WikiError):
         Worker(settings, store, wiki).poll(now)
-    assert wiki.changes.call_args.args == (now - 900, now)
-    assert store.get_state('rc_cursor') == now - 300 and store.get_state('last_poll') is None
+    assert store.get_state('last_poll') == now - 300
+    assert store.get_state('last_reconcile') == now - 300
+
+
+def test_unchanged_poll_uses_one_metadata_read_and_no_cached_text(settings, store, wiki, monkeypatch):
+    settings.start_month = '2025-01'
+    now = datetime(2026, 10, 9, tzinfo=settings.zone).timestamp()
+    for month in month_range(settings.start_month, datetime.fromtimestamp(now, settings.zone)):
+        title = page_title(month)
+        store.save_page(title, month=month, revision=10, origin='wiki')
+        wiki.data[title] = Revision(title, 10, now - 3600, 'Text that observation must not load')
+    headers = Mock(wraps=store.page_headers)
+    monkeypatch.setattr(store, 'page_headers', headers)
+    monkeypatch.setattr(store, 'all_pages', Mock(side_effect=AssertionError('Loaded all cached text')))
+    monkeypatch.setattr(store, 'page', Mock(side_effect=AssertionError('Loaded cached page text')))
+    wiki.revisions = Mock(wraps=wiki.revisions)
+    Worker(settings, store, wiki).poll(now)
+    headers.assert_called_once_with()
+    assert wiki.revisions.call_count == 2
+    assert all(len(call.args[0]) <= 20 and not call.kwargs.get('content') for call in wiki.revisions.call_args_list)
+    assert not store.queue() and not wiki.edits
+
+
+def test_idle_observer_does_not_load_or_build_reports(settings, store, wiki, monkeypatch):
+    now = time.time()
+    store.set_state('last_poll', now)
+    store.set_state('last_reconcile', now)
+    monkeypatch.setattr(store, 'all_pages', Mock(side_effect=AssertionError('Loaded report text while idle')))
+    wiki.revisions = Mock(side_effect=AssertionError('Polled before search interval elapsed'))
+    worker = Worker(settings, store, wiki)
+    assert worker.watch(now + 5)
+    assert worker.watch(now + 10)
+    assert store.get_state('last_poll') == now
+
+
+def test_revision_saved_during_poll_is_not_requeued(settings, store, wiki):
+    now = time.time()
+    store.save_page(wiki.title, month=settings.start_month, revision=10, origin='wiki')
+
+    def revisions(titles):
+        store.save_page(wiki.title, month=settings.start_month, revision=11, origin='wiki')
+        return [Revision(wiki.title, 11, now, 'Saved by executor')]
+
+    wiki.revisions = revisions
+    Worker(settings, store, wiki).poll(now)
+    assert not store.queue()
+
+
+def test_repeated_poll_preserves_retry_backoff_and_monthly_spacing(settings, store, wiki):
+    now = time.time()
+    worker = Worker(settings, store, wiki)
+    worker.observe(wiki.title, 10, now - 1000, now)
+    job = store.queue()[0]
+    store.enqueue(job['key'], 'page', job['due_at'], title=wiki.title, revision=10, spacing=True)
+    store.retry(store.queue()[0], now)
+    retry = store.queue()[0]
+    worker.poll(now + 5)
+    assert store.queue()[0] == retry
+
+
+def test_missing_page_retry_is_not_reset_by_poll(settings, store, wiki):
+    now = time.time()
+    store.save_page(wiki.title, month=settings.start_month, revision=10, origin='wiki')
+    wiki.data.pop(wiki.title)
+    worker = Worker(settings, store, wiki)
+    worker.poll(now)
+    assert store.queue()[0]['due_at'] == now
+    store.retry(store.queue()[0], now)
+    retry = store.queue()[0]
+    worker.poll(now + 5)
+    assert store.queue()[0] == retry
 
 
 def test_new_edit_before_due_run_extends_quiet_period_without_publishing_new_text(settings, store, wiki):

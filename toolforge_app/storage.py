@@ -4,6 +4,7 @@ import hashlib
 import time
 import uuid
 from contextlib import contextmanager
+from threading import RLock
 
 from sqlalchemy import (Boolean, Column, Float, ForeignKey, Integer, LargeBinary, MetaData, String, Table, or_,
                         Text, case, create_engine, delete, func, insert, literal, select, update)
@@ -107,6 +108,8 @@ def dump(value):
 
 class Store:
     def __init__(self, url):
+        self.report_cache = {}
+        self.report_cache_lock = RLock()
         if url.startswith("sqlite:///var/"):
             from .config import ROOT
             (ROOT / "var").mkdir(exist_ok=True)
@@ -245,15 +248,19 @@ class Store:
 
     def set_state(self, key, value):
         with self.engine.begin() as conn:
-            if conn.execute(select(state.c.key).where(state.c.key == key)).first():
+            self._set_state(conn, key, value)
+
+    @staticmethod
+    def _set_state(conn, key, value):
+        if conn.execute(select(state.c.key).where(state.c.key == key)).first():
+            conn.execute(update(state).where(state.c.key == key).values(value=dump(value)))
+        else:
+            try:
+                with conn.begin_nested():
+                    conn.execute(insert(state).values(key=key, value=dump(value)))
+            except IntegrityError:
+                # The observer and executor can initialize the same state.
                 conn.execute(update(state).where(state.c.key == key).values(value=dump(value)))
-            else:
-                try:
-                    with conn.begin_nested():
-                        conn.execute(insert(state).values(key=key, value=dump(value)))
-                except IntegrityError:
-                    # The observer and executor can initialize the same state.
-                    conn.execute(update(state).where(state.c.key == key).values(value=dump(value)))
 
     def connection_secret(self, name):
         with self.engine.connect() as conn:
@@ -367,12 +374,23 @@ class Store:
             return [dict(r) for r in conn.execute(select(pages).where(
                 pages.c.processor == processor).order_by(pages.c.month.desc())).mappings()]
 
+    def page_headers(self, processor="obkat", *, title=None):
+        """Revision and observation metadata without cached wikitext or findings."""
+        statement = select(pages.c.title, pages.c.month, pages.c.revision, pages.c.checked_at,
+                           pages.c.missing, pages.c.origin).where(pages.c.processor == processor)
+        if title is not None:
+            statement = statement.where(pages.c.title == title)
+        with self.engine.connect() as conn:
+            return [dict(row) for row in conn.execute(statement).mappings()]
+
     def save_page(self, title, **values):
         with self.engine.begin() as conn:
             if conn.execute(select(pages.c.title).where(pages.c.title == title)).first():
                 conn.execute(update(pages).where(pages.c.title == title).values(**values))
             else:
                 conn.execute(insert(pages).values(title=title, processor="obkat", **values))
+            # Commit invalidation with the page, including writes from another process.
+            self._set_state(conn, "obkat:pages_version", uuid.uuid4().hex)
 
     def enqueue(self, key, kind, due_at, title="", revision=0, spacing=False, requested_by="worker", *, processor="obkat"):
         """Page edits debounce; manual requests coalesce. Preserve pending spacing."""
