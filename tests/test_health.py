@@ -71,6 +71,36 @@ def test_stale_inventory_and_failed_run_are_reported_without_private_diagnostics
     assert 'SECRET_DIAGNOSTIC' not in str(entries)
 
 
+@pytest.mark.parametrize('slug', ['categories-create', 'categories-format'])
+def test_new_task_first_inventory_does_not_inherit_common_monitor_age(settings, store, slug):
+    prime(store, 100000)
+    store.set_state('monitor_started_at', 1)
+    store.set_state(slug + ':inventory', {})
+    assert slug not in system_status(settings, store, 100001)['stale']
+    assert store.get_state(slug + ':observation_started_at') == 100001
+    # Repeated checks do not reset the waiting period or generate resolved alerts.
+    assert slug not in system_status(settings, store, 100006)['stale']
+    assert store.get_state(slug + ':observation_started_at') == 100001
+    assert not store.list_notifications()
+    later = 100001 + 7 * 3600 + 1
+    prime(store, later)
+    store.set_state(slug + ':inventory', {})
+    assert slug in system_status(settings, store, later)['stale']
+    assert len(store.list_notifications()) == 1
+    assert store.list_notifications()[0]['active_key'] == 'stale:' + slug
+    store.set_state(slug + ':inventory', {'checked_at': later})
+    assert slug not in system_status(settings, store, later + 1)['stale']
+    assert store.list_notifications()[0]['resolved_at'] == later + 1
+
+
+def test_missing_first_inventory_uses_known_task_start_without_hiding_longstanding_failure(settings, store):
+    prime(store, 100000)
+    store.set_state('categories-create:inventory', {})
+    store.set_state('categories-create:schedule_started_at', 1)
+    assert 'categories-create' in system_status(settings, store, 100001)['stale']
+    assert store.get_state('categories-create:observation_started_at') == 1
+
+
 def test_missed_daily_deadline_does_not_flag_a_task_waiting_for_another_run(settings, store):
     now = datetime(2026, 10, 6, 4, 30, tzinfo=settings.zone).timestamp()
     prime(store, now)

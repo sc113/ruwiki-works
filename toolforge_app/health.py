@@ -59,7 +59,15 @@ def system_status(settings, store, now=None):
         else:
             checked = store.get_state(task.slug + ':inventory', {}).get('checked_at', 0)
             max_age = get_schedule(settings, store, task.slug)['search_minutes'] * 60 + 3600
-        started = store.get_state('monitor_started_at', 0)
+        started = 0
+        if not checked:
+            # Newly enabled tasks may appear while the common monitor has been
+            # running for days. Their first inventory has its own waiting period.
+            key = task.slug + ':observation_started_at'
+            started = store.get_state(key, 0)
+            if not started:
+                started = store.get_state(task.slug + ':schedule_started_at', 0) or now
+                store.set_state(key, started)
         if components['monitor']['enabled'] and ((checked and now - checked > max_age) or (not checked and started and now - started > max_age)):
             stale.add(task.slug)
             alert('stale:' + task.slug, 'Данные устарели: ' + task.title,
