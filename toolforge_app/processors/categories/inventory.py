@@ -131,6 +131,15 @@ def refresh_inventory(wiki, store, slug, config=None, *, scan=None, formats=None
         elif creates and config['check_simple'] and config['check_complex']:
             unknown.append(dict(title=title, reason='В таблице нет формата для этой месячной категории. '
                                 'Добавьте определение в вики-таблицу или создайте страницу вручную.', categories=[]))
+    if creates and (rows or unknown):
+        # Replicas can lag behind a successful save or a human-created page.
+        # Validate this small monthly subset against the live API before counting it.
+        live = wiki.category_pages(list(rows) + [item['title'] for item in unknown])
+        def still_missing(title):
+            page = live.get(title, {})
+            return page.get('base') and page['base'].missing and page.get('population', 0) > 0
+        rows = {title: dict(row, count=live[title]['population']) for title, row in rows.items() if still_missing(title)}
+        unknown = [item for item in unknown if still_missing(item['title'])]
     result = dict(articles=rows, total=len(rows), checked_at=now, selection=selection(config),
                   format_signature=formats['signature'], format_revision=formats['revision'],
                   missing_count=len(scan['missing']), complete=scan['complete'], backend=scan['backend'], unknown=unknown,
@@ -150,7 +159,8 @@ def proof(entry):
 def is_checked(entry, row, signature):
     saved = proof(entry or {})
     return (entry and entry['outcome'] in {'ok', 'edited', 'bot-excluded'}
-            and saved.get('revision') == row.get('revision')
+            # Our confirmed save is authoritative if the replica is still behind it.
+            and isinstance(saved.get('revision'), int) and saved['revision'] >= row.get('revision', 0)
             and saved.get('signature') == row.get('format_signature', signature))
 
 

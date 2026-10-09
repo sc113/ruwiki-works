@@ -281,3 +281,16 @@ def test_mixed_category_batch_keeps_redirects_and_hidden_content_local(settings)
     assert rows[TITLE]['base'].missing and rows[TITLE]['population'] == 3
     assert rows[OTHER]['error'] == 'redirect' and rows['Категория:Скрытая']['error'] == 'hidden-content'
     assert 'redirects' not in wiki.request.call_args.args[0]
+
+
+def test_replica_lag_does_not_leave_saved_categories_pending(settings, store, category_wiki, monkeypatch):
+    settings.wiki_write = True
+    stale = category_wiki.scan('Википедия:')
+    monkeypatch.setattr('toolforge_app.processors.categories.inventory.replica_snapshot', lambda prefix: stale)
+    CategoryWorker(settings, store, CREATE, category_wiki).execute(queue(store, CREATE))
+    assert len(category_wiki.edits) == 1 and report(store, CREATE)['to_process'] == 0
+    CategoryWorker(settings, store, FORMAT, category_wiki).execute(queue(store, FORMAT))
+    assert report(store, FORMAT)['to_process'] == 0
+    category_wiki.reads.clear()
+    CategoryWorker(settings, store, FORMAT, category_wiki).execute(queue(store, FORMAT))
+    assert not category_wiki.reads
