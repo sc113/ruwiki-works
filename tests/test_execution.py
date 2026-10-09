@@ -56,7 +56,7 @@ def test_dispatcher_drains_actions_in_order_without_overlapping(settings, store,
     store.set_state('last_reconcile', time.time())
     for slug in [UNWRAP, RQ, DATES, 'obkat']:
         queued(store, slug)
-    assert Dispatcher(settings, store, obkat=obkat, maintenance=actions, translations=[], sections=[]).tick()
+    assert Dispatcher(settings, store, obkat=obkat, maintenance=actions, translations=[], sections=[], categories=[]).tick()
     runs = sorted(store.list_runs(processor=None), key=lambda run: run['started_at'])
     assert [run['processor'] for run in runs] == ['obkat', DATES, RQ, UNWRAP]
     assert all(previous['finished_at'] <= following['started_at'] for previous, following in zip(runs, runs[1:]))

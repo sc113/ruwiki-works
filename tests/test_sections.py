@@ -379,6 +379,6 @@ def test_daily_serial_dispatcher_runs_directions_in_registry_order(settings, sto
         outer_renew = lambda: None
         def tick(self):
             pass
-    Dispatcher(settings, store, obkat=Idle(), maintenance=[], translations=[], sections=[first, second]).tick()
+    Dispatcher(settings, store, obkat=Idle(), maintenance=[], translations=[], sections=[first, second], categories=[]).tick()
     assert len(wiki.edits) == 2
     assert 'Дополнить раздел' in wiki.edits[0][1] and '{{Пустой раздел}}' in wiki.edits[1][1]

@@ -63,7 +63,7 @@ def statistics(store, zone, month=None, now=None):
             for value in targets(event.get('at', run['started_at']), slug):
                 value['edits'] += 1
                 value['pages'].add(event['title'])
-                if get_task(slug).processor != 'obkat':
+                if get_task(slug).processor not in {'obkat', 'categories'}:
                     value['articles'].add(event['title'])
                 value['templates'] += event.get('template_count', len(event.get('changes') or []))
 

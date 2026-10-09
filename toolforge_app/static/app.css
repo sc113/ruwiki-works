@@ -1999,6 +1999,15 @@ select {
 .schedule-form { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; min-width: 0; }
 .schedule-form label { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 15px; }
 .schedule-input { display: flex; align-items: center; gap: 8px; }
+.schedule-input select { width: 150px; min-width: 0; padding: 7px 9px; }
+.category-format-readouts { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.category-format-readouts .block-heading { margin-bottom: 10px; }
+.category-format-row { align-items: flex-start !important; }
+.category-format-row > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.category-format-row details { min-width: 0; max-width: 60%; color: var(--muted); }
+.category-format-row pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.category-candidates { list-style: none; margin: 0; padding: 0; }
+.category-candidates .muted-value { white-space: nowrap; font-size: 14px; }
 .schedule-form input { width: 118px; height: 34px; border: 1px solid #3b5272; border-radius: 5px; padding: 5px 8px; color: var(--text); background: var(--bg); font: inherit; }
 .schedule-form input[type="number"] { width: 80px; }
 .schedule-form .schedule-save { width: 34px; height: 34px; padding: 6px; }

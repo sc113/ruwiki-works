@@ -517,7 +517,7 @@ class Store:
     def cancel_schedule(self, processor):
         with self.engine.begin() as conn:
             conn.execute(delete(jobs).where(jobs.c.processor == processor,
-                jobs.c.kind == "daily", jobs.c.due_at > time.time()))
+                jobs.c.kind.in_(['daily', 'weekly', 'month_end']), jobs.c.due_at > time.time()))
 
     def resolve_page_job(self, title, revision, spacing):
         with self.engine.begin() as conn:

@@ -2,7 +2,7 @@
 import time
 
 from .processors import TASKS
-from .schedules import get_schedule, next_daily_time
+from .schedules import get_schedule, previous_task_time
 from .runtime import service_enabled
 
 
@@ -76,18 +76,18 @@ def system_status(settings, store, now=None):
 
     if not running and components['executor']['enabled']:
         for task in tasks:
-            if 'daily' not in task.schedules or controls[task.slug]['mode'] != 'active':
+            if not {'daily', 'weekly'} & set(task.schedules) or controls[task.slug]['mode'] != 'active':
                 continue
             baseline = max(store.get_state(task.slug + ':schedule_started_at', 0),
                            controls[task.slug].get('at') or 0,
                            store.get_state(task.slug + ':schedule_updated', {}).get('at', 0))
             if not baseline:
                 continue
-            deadline = next_daily_time(get_schedule(settings, store, task.slug)['run_time'], now) - 86400
+            deadline = previous_task_time(settings, store, task.slug, now)
             recent = store.list_runs(1, processor=task.slug, exclude_import=True, started_from=deadline, details=False)
             if deadline >= baseline and now - deadline > 900 and not recent:
                 alert('missed:' + task.slug, 'Пропущен запуск: ' + task.title,
-                      'После времени ежедневного запуска прошло больше 15 минут; обработка не началась.', '/runs?task=' + task.slug)
+                      'После запланированного времени прошло больше 15 минут; обработка не началась.', '/runs?task=' + task.slug)
 
     executor, monitor = components['executor'], components['monitor']
     if stopped:

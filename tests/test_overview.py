@@ -13,7 +13,7 @@ def test_index_is_overview_and_import_is_not_presented_as_a_bot_run(settings, st
     store.finish_run(run_id, [], {}, {})
     overview = build_overview(settings, store)
     assert overview["total_problems"] == 1
-    assert len(overview["cards"]) == 8 and overview["enabled_count"] == 8
+    assert len(overview["cards"]) == 10 and overview["enabled_count"] == 10
     assert overview["cards"][0]["last_run"] is None
     assert overview["cards"][0]["snapshot"]["id"] == run_id
     response = create_app(settings, store).test_client().get("/")

@@ -22,6 +22,10 @@
     <path d="M4 5h16M4 19h16M20 12H10m3-3-3 3 3 3M6 9v6"/>
   {% elif name == 'sections' %}
   <path d="M12 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v4M13 3v5h5M8 12h4M8 16h2M18 15v6M15 18h6"/>
+  {% elif name in ['categories', 'categories-create'] %}
+  <path d="M3 7V4h6l2 3h10v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7ZM3 7h18M12 11v6M9 14h6"/>
+  {% elif name == 'categories-format' %}
+  <path d="M4 3h12l4 4v7M16 3v4h4M4 3v18h8M8 8h4M8 12h6m1 7 2 2 5-6"/>
   {% elif name == 'overview' %}
   <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
   {% elif name == 'bell' %}

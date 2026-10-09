@@ -1,7 +1,7 @@
 {% from 'icons.html' import icon %}
 <details id="settings" class="parameters-panel"><summary>{{ icon('settings') }}<span>Параметры</span>{{ icon('chevron') }}</summary>
   <div class="parameters-content">
-  {% if module.slug in ['maintenance', 'translations', 'sections'] and is_admin %}
+  {% if module.slug in ['maintenance', 'translations', 'sections', 'categories'] and is_admin %}
     {% if module.slug == 'sections' %}<p class="settings-note">Проверены и сохранены в пропуски: <strong>{{ report.remembered }}</strong>. Параметры шаблонов и даты сохраняются при замене имени.</p>{% endif %}<div class="parameters-help"><details class="help-disclosure"><summary aria-label="О настройках">?</summary><div class="help-content"><p>Настройки независимы для каждого действия и применяются со следующего запуска. Выключенное автосохранение включает проверку без правок.</p>{% if module.slug == 'maintenance' and task.slug != 'maintenance-rq-unwrap' %}<p>Лимит ревизий 0 — без ограничения. Ручное изменение списка шаблонов разделов отключает его автоматическое обновление.</p>{% endif %}</div></details></div>
     <form action="{{ url_for('task_settings', slug=task.slug) }}" method="post" class="settings-form"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <div class="settings-sections">{% for group in config_fields|rejectattr('key', 'equalto', 'run_time')|groupby('group') %}<section class="settings-group" aria-labelledby="config-group-{{ loop.index }}"><h3 class="settings-group-title" id="config-group-{{ loop.index }}">{{ group.grouper }}</h3><div class="settings-grid">{% for field in group.list %}<label class="setting-field {{ 'wide' if field.kind in ['text', 'search', 'time'] or group.grouper == 'Отладка' }} {{ 'checkbox-field' if field.kind == 'bool' }}"><span>{{ field.label }}</span>{% if field.kind == 'bool' %}<input type="checkbox" name="{{ field.key }}" {% if field.value %}checked{% endif %}>{% elif field.kind == 'search' %}<select name="{{ field.key }}"><option value="1" {% if field.value == 1 %}selected{% endif %}>1 · Последняя непрерывная установка</option><option value="2" {% if field.value == 2 %}selected{% endif %}>2 · Первое появление</option><option value="3" {% if field.value == 3 %}selected{% endif %}>3 · Двоичный поиск с проверкой ранних версий</option></select>{% elif field.kind in ['list', 'mapping'] %}<textarea name="{{ field.key }}" rows="{{ 8 if field.kind == 'mapping' else 5 }}" spellcheck="false">{{ field.value }}</textarea>{% else %}<input type="{{ field.kind }}" name="{{ field.key }}" value="{{ field.value }}" {% if field.kind == 'number' %}min="0" max="1000000"{% endif %}>{% endif %}</label>{% endfor %}</div></section>{% endfor %}</div>
@@ -10,7 +10,7 @@
     {% if config.section_templates_auto %}<form id="section-refresh-form" action="{{ url_for('task_refresh', slug=task.slug) }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="mode" value="sections"></form>{% endif %}
   {% else %}
     <dl class="public-parameters">
-      {% if module.slug in ['maintenance', 'translations', 'sections'] %}
+      {% if module.slug in ['maintenance', 'translations', 'sections', 'categories'] %}
       <div><dt>{{ 'Поиск статей' if module.slug == 'sections' else 'Проверка категорий' }}</dt><dd>{{ task_state.schedule.search_minutes|search_frequency }}</dd></div>
       <div class="wide"><dt>Источник</dt><dd>
         {% if module.slug == 'sections' %}
@@ -36,5 +36,6 @@
       {% endif %}
     </dl>
   {% endif %}
+  {% if module.slug == 'categories' %}{% include 'category_formats.html' %}{% endif %}
   </div>
 </details>

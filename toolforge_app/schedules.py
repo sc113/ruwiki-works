@@ -29,20 +29,39 @@ TIMERS = {
     "after_edit": Timer("after_edit", "quiet_minutes", "После последней правки", "number", "мин", "quiet_minutes", 1, 1440),
     "month_end": Timer("month_end", "month_end_time", "Форматирование в конце месяца", "time", "МСК", "month_end_time"),
     "search": Timer("search", "search_minutes", "Поиск изменений", "number", "мин", 360, 1, 10080),
+    "weekly": Timer("weekly", "run_time", "Еженедельно", "time", "МСК", "05:00"),
+    "weekday": Timer("weekday", "weekday", "День недели", "select", "", 0, 0, 6),
 }
 
 
 def timer_definitions(slug):
     task = get_task(slug)
-    return [TIMERS['search'], *[TIMERS[kind] for kind in task.schedules]] if task and task.schedules else []
+    if not task or not task.schedules:
+        return []
+    definitions = [TIMERS['search']]
+    for kind in task.schedules:
+        if kind == 'weekly':
+            definitions.append(TIMERS['weekday'])
+        definitions.append(TIMERS[kind])
+    return definitions
 
 
 def get_schedule(settings, store, slug):
     saved = store.get_state(slug + ":config", {})
-    return {timer.key: saved.get(timer.key, (max(1, settings.poll_seconds // 60) if slug == 'obkat' else 360)
-            if timer.kind == 'search' else getattr(settings, timer.default)
-            if timer.kind in {"after_edit", "month_end"} else get_task(slug).daily_time)
-            for timer in timer_definitions(slug)}
+    result = {}
+    for timer in timer_definitions(slug):
+        if timer.kind == 'search':
+            default = max(1, settings.poll_seconds // 60) if slug == 'obkat' else 360
+        elif timer.kind == 'weekday':
+            default = 0
+        elif timer.kind == 'month_end' and slug != 'obkat':
+            default = get_task(slug).month_end_time
+        elif timer.kind in {'after_edit', 'month_end'}:
+            default = getattr(settings, timer.default)
+        else:
+            default = get_task(slug).daily_time
+        result[timer.key] = saved.get(timer.key, default)
+    return result
 
 
 def search_interval(settings, store, slug):
@@ -51,7 +70,8 @@ def search_interval(settings, store, slug):
 
 def schedule_fields(settings, store, slug):
     values = get_schedule(settings, store, slug)
-    return [dict(kind=timer.kind, key=timer.key, label=timer.label, input_type=timer.input_type,
+    return [dict(kind=timer.kind, key=timer.key, label='Полная проверка в конце месяца'
+                 if slug == 'categories-format' and timer.kind == 'month_end' else timer.label, input_type=timer.input_type,
                  unit=timer.unit, value=values[timer.key], minimum=timer.minimum, maximum=timer.maximum)
             for timer in timer_definitions(slug)]
 
@@ -89,7 +109,8 @@ def save_schedule(settings, store, slug, values, actor, *, partial=False):
     previous = get_schedule(settings, store, slug)
     store.patch_state(slug + ":config", parsed)
     store.set_state(slug + ":schedule_updated", dict(at=time.time(), by=actor))
-    if "run_time" in parsed and parsed["run_time"] != previous["run_time"]:
+    reschedule_keys = ('run_time', 'weekday') if slug == 'obkat' else ('run_time', 'weekday', 'month_end_time')
+    if any(key in parsed and parsed[key] != previous.get(key) for key in reschedule_keys):
         store.cancel_schedule(slug)
     if "quiet_minutes" in parsed and parsed["quiet_minutes"] != previous["quiet_minutes"]:
         # Observation performs API reads outside the short HTTP request.
@@ -108,6 +129,47 @@ def next_daily_time(value, now, zone=MOSCOW):
     if candidate.timestamp() <= now:
         candidate += timedelta(days=1)
     return candidate.timestamp()
+
+
+def next_weekly_time(value, weekday, now, zone=MOSCOW):
+    local = datetime.fromtimestamp(now, zone)
+    hour, minute = map(int, value.split(':'))
+    candidate = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    candidate += timedelta(days=(weekday - local.weekday()) % 7)
+    if candidate.timestamp() <= now:
+        candidate += timedelta(days=7)
+    return candidate.timestamp()
+
+
+def next_task_time(settings, store, slug, now):
+    task = get_task(slug)
+    schedule = get_schedule(settings, store, slug)
+    due = []
+    if 'daily' in task.schedules:
+        due.append(next_daily_time(schedule['run_time'], now))
+    if 'weekly' in task.schedules:
+        due.append(next_weekly_time(schedule['run_time'], schedule['weekday'], now))
+    if 'month_end' in task.schedules:
+        due.append(next_month_end_time(schedule['month_end_time'], now))
+    return min(due) if due else None
+
+def previous_task_time(settings, store, slug, now):
+    task = get_task(slug)
+    schedule = get_schedule(settings, store, slug)
+    due = []
+    if 'daily' in task.schedules:
+        due.append(next_daily_time(schedule['run_time'], now) - 86400)
+    if 'weekly' in task.schedules:
+        due.append(next_weekly_time(schedule['run_time'], schedule['weekday'], now) - 7 * 86400)
+    if 'month_end' in task.schedules:
+        local = datetime.fromtimestamp(now, MOSCOW)
+        year, number = local.year, local.month
+        candidate = month_end_deadline(f'{year}-{number:02d}', schedule['month_end_time'])
+        if candidate > now:
+            year, number = (year - 1, 12) if number == 1 else (year, number - 1)
+            candidate = month_end_deadline(f'{year}-{number:02d}', schedule['month_end_time'])
+        due.append(candidate)
+    return max(due) if due else None
 
 
 def month_end_deadline(month, value, zone=MOSCOW):

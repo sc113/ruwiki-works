@@ -304,15 +304,58 @@ class WikiClient:
             raise WikiError("outside-scope")
         return self._save(base, text, summary, minor=True)
 
-    def _save(self, base, text, summary, *, minor):
+    def category_pages(self, titles):
+        """Read category revisions and live population in batches, without following redirects."""
+        result = {}
+        for offset in range(0, len(titles), 20):
+            data = self.request(dict(action='query', titles='|'.join(titles[offset:offset + 20]),
+                                     prop='revisions|categoryinfo', rvprop='ids|timestamp|content', rvslots='main'), post=True)
+            for page in data['query']['pages']:
+                title = page['title']
+                if page.get('invalid') or page.get('redirect'):
+                    result[title] = dict(error='redirect' if page.get('redirect') else 'outside-scope')
+                    continue
+                if page.get('missing'):
+                    base = Revision(title, missing=True)
+                else:
+                    revisions = page.get('revisions', [])
+                    if not revisions or 'content' not in revisions[0].get('slots', {}).get('main', {}):
+                        result[title] = dict(error='hidden-content')
+                        continue
+                    revision = revisions[0]
+                    base = Revision(title, revision['revid'], epoch(revision['timestamp']),
+                                    revision['slots']['main']['content'])
+                result[title] = dict(base=base, population=page.get('categoryinfo', {}).get('size', 0))
+        return result
+
+    def category_page(self, title):
+        page = self.category_pages([title])[title]
+        if page.get('error'):
+            raise WikiError(page['error'])
+        return page['base'], page['population']
+
+    def edit_category(self, base, text, summary, allowed_titles, *, create=False):
+        if not base.title.startswith('Категория:') or base.title not in allowed_titles:
+            raise WikiError('outside-scope')
+        if create and not base.missing:
+            raise WikiError('articleexists')
+        if not create and base.missing:
+            raise WikiError('missingtitle')
+        return self._save(base, text, summary, minor=False, create=create)
+
+    def _save(self, base, text, summary, *, minor, create=False):
         require_bot_permission(base.text, self.settings.bot_username)
         self.login()
         token = self.request({"action": "query", "meta": "tokens"})["query"]["tokens"]["csrftoken"]
-        data = self.request({"action": "edit", "title": base.title, "text": text,
-            "summary": fit_comment(summary), "token": token, "baserevid": base.revision,
-            "basetimestamp": timestamp(base.edited_at), "starttimestamp": timestamp(time.time()),
-            "nocreate": 1, "assert": "user", "assertuser": self.settings.bot_username, "bot": 1,
-            "minor" if minor else "notminor": 1, "watchlist": "nochange"}, post=True)
+        params = {"action": "edit", "title": base.title, "text": text,
+            "summary": fit_comment(summary), "token": token, "starttimestamp": timestamp(time.time()),
+            "assert": "user", "assertuser": self.settings.bot_username, "bot": 1,
+            "minor" if minor else "notminor": 1, "watchlist": "nochange"}
+        if create:
+            params['createonly'] = 1
+        else:
+            params.update(nocreate=1, baserevid=base.revision, basetimestamp=timestamp(base.edited_at))
+        data = self.request(params, post=True)
         edit = data.get("edit", {})
         if edit.get("result") != "Success":
             raise WikiError("captcha" if "captcha" in edit else "edit-failed")

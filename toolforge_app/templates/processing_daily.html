@@ -2,7 +2,7 @@
 {% from 'ui.html' import timeline with context %}
 <section class="processing-block" aria-labelledby="processing-heading">
   <div class="overview-heading"><h2 id="processing-heading">{{ task.title }}</h2><span class="badge {{ task_state.status }}">{{ task_state.status_label }}</span>{% if task_state.dry_run %}<span class="mode-label">Режим проверки</span>{% endif %}</div>
-  {{ timeline(task_state, 'Поиск статей' if task_state.processor.slug == 'sections' else 'Проверка категорий') }}
+  {{ timeline(task_state, 'Поиск статей' if task_state.processor.slug == 'sections' else 'Поиск категорий' if task_state.processor.slug == 'categories' else 'Проверка категорий') }}
   {% include 'run_progress.html' %}
   {% with launch_kind='daily' %}{% include 'processing_management.html' %}{% endwith %}
 </section>

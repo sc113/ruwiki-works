@@ -23,7 +23,7 @@ def test_bulk_launch_is_serial_ordered_deduplicated_and_keeps_disabled_tasks(set
         assert result.status_code == 302 and result.location == '/journal'
     expected = [task.slug for task in TASKS if task.slug not in {'translations-talk','sections-fill-to-empty'}]
     assert [job['processor'] for job in ready_jobs(store)] == expected
-    assert len(store.queue(None)) == 6 and len(store.pending_run_requests()) == 6
+    assert len(store.queue(None)) == len(expected) and len(store.pending_run_requests()) == len(expected)
     assert all(job['kind'] == 'full' and not job['spacing'] for job in store.queue(None))
     assert 'Проверена' in store.checked_articles('translations-categories')
     assert store.control('translations-talk')['mode'] == 'paused'

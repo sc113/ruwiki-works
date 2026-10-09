@@ -5,7 +5,7 @@ import time
 from .processors import TASKS, Processor, get_processor
 from .processors.obkat.service import report as obkat_report
 from .processors.daily import TASK_SLUGS as DAILY_TASKS, get_config, report as daily_report
-from .schedules import get_schedule, schedule_fields, next_daily_time, next_month_end_time
+from .schedules import get_schedule, schedule_fields, next_task_time, next_month_end_time
 from .execution import ready_jobs
 from .runtime import execution_settings, service_enabled
 from .health import component_health
@@ -99,7 +99,7 @@ def build_overview(settings, store, now=None):
             "search_status": search_status, "search_online": search_online,
             "automatic_enabled": service_enabled(store, 'executor'),
             "manual_next": bool(next_job and store.run_request(job_key=next_job['key'])),
-            "next_scheduled": next_daily_time(schedule["run_time"], now) if maintenance else None,
+            "next_scheduled": next_task_time(settings, store, task.slug, now) if maintenance else None,
             "run_time": config["run_time"] if maintenance else None,
             "dry_run": bool(latest['dry_run']) if running else (
                 not (settings.wiki_write and config["autosave"]) if maintenance else not settings.wiki_write),

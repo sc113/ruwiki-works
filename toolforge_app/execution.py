@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from .processors import TASKS
 
 ORDER = {task.slug: index for index, task in enumerate(TASKS) if task.enabled}
-KIND_ORDER = {"bootstrap": 0, "full": 1, "recheck": 1, "article": 1, "month_end": 2, "daily": 3, "page": 4}
+KIND_ORDER = {"bootstrap": 0, "full": 1, "recheck": 1, "article": 1, "month_end": 2, "daily": 3, "weekly": 3, "page": 4}
 
 
 def ready_jobs(store, now=None, *, exclude_running=False):

@@ -1,0 +1,9 @@
+<section class="category-format-readouts">
+  <div class="block-heading"><h3>Форматы категорий</h3><a href="{{ wiki_url(config.source_page) }}" target="_blank" rel="noopener">Вики-таблица ↗</a></div>
+  {% if report.formats %}<p class="settings-note">{{ report.formats.simple|length }} обычных · {{ report.formats.complex|length }} сложных · версия {{ report.formats.revision }}. Перед обработкой проверяется актуальная версия.</p>
+  {% for kind, heading in [('simple', 'Обычные · GenerateTemplates2'), ('complex', 'Сложные · GenerateTemplates')] %}
+  <details class="empty-categories"><summary>{{ icon('chevron') }}{{ heading }} <span>{{ report.formats[kind]|length }}</span></summary><ul class="category-list">{% for pattern, content in report.formats[kind].items() %}<li class="category-format-row"><span>{{ pattern }}</span><details><summary>{{ 'Вики-текст' if kind == 'complex' else 'Параметры' }}</summary><pre>{{ content }}</pre></details></li>{% endfor %}</ul></details>
+  {% endfor %}
+  {% else %}<p class="settings-note">Форматы будут получены при поиске или запуске обработки.</p>{% endif %}
+  {% if is_admin %}<form action="{{ url_for('task_refresh', slug=task.slug) }}" method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="mode" value="formats"><button class="button secondary">{{ icon('restart') }}Обновить форматы и счётчики</button></form>{% endif %}
+</section>

@@ -37,7 +37,7 @@ from .statistics import statistics
 
 KIND_LABELS = {"page": "После правки", "full": "Ручной запуск", "month_end": "Конец месяца",
                "import": "Локальный снимок", "bootstrap": "Первичная синхронизация", "daily": "По расписанию",
-               "recheck": "Проверка с нуля", "article": "Повтор статьи"}
+               "recheck": "Проверка с нуля", "article": "Повтор статьи", "weekly": "Еженедельный запуск"}
 
 
 def create_app(settings=None, store=None, *, admin_preview=False):
@@ -466,7 +466,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
                 abort(404)
             return render_template("planned.html", module=module, task=task, active=active,
                                    history=[], history_page=1, history_has_next=False)
-        if slug in {"maintenance", "translations", "sections"}:
+        if slug in {"maintenance", "translations", "sections", "categories"}:
             actions = [task for task in TASKS if task.processor == slug and task.enabled]
             task_slug = request.args.get("task", actions[0].slug)
             if task_slug not in {task.slug for task in actions}:
@@ -483,16 +483,27 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             config = get_config(store, task_slug)
             report = task_state["report"]
             active = request.args.get("view", "problems" if report["problems"] else "pending")
-            if active not in ({"problems", "pending", "skipped", "logs"} if slug in {"translations", "sections"} else {"problems", "pending", "logs"}):
+            views = {'problems', 'pending', 'logs'}
+            if slug in {'translations', 'sections'}:
+                views.add('skipped')
+            if slug == 'categories':
+                views.add('missing')
+            if active not in views:
                 abort(404)
             result_items = report["pending_articles"] if active == "pending" else report["skipped_articles"] if active == "skipped" else report["manual"]
+            items = result_items[(page_number - 1) * 40:page_number * 40]
+            has_next = len(result_items) > page_number * 40
+            query = request.args.get('q', '').strip()[:255]
+            if slug == 'categories' and active == 'missing':
+                from .processors.categories.inventory import missing_page
+                items, has_next = missing_page(store, config, query, page_number)
             config_fields = [dict(key=key, label=label, kind=kind, group=group, value=form_value(config, key, kind))
                              for key, label, kind, group in fields(task_slug)]
             return render_template("daily.html", module=module, active=active, task=task_state["task"], actions=actions,
                 task_state=task_state, control=task_state["control"], report=report, config=config,
                 config_fields=config_fields, history=history[:25], history_page=history_page,
-                history_has_next=len(history) > 25, items=result_items[(page_number - 1) * 40:page_number * 40],
-                page_number=page_number, has_next=len(result_items) > page_number * 40,
+                history_has_next=len(history) > 25, items=items, query=query,
+                page_number=page_number, has_next=has_next,
                 config_updated=store.get_state(task_slug + ":config_updated"))
         task_state = build_overview(settings, store)["cards"][0]
         report = task_state["report"]
@@ -723,7 +734,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         if store.control(slug)["mode"] != "active":
             abort(409, "Возобновите задачу перед ручным запуском.")
         mode = request.form.get("mode", "normal")
-        if mode not in {"normal", "recheck"} or mode == "recheck" and get_task(slug).processor not in {"translations", "sections"}:
+        if mode not in {"normal", "recheck"} or mode == "recheck" and get_task(slug).processor not in {"translations", "sections", "categories"}:
             abort(400)
         try:
             receipt = store.request_run(slug, session['username'], kind='recheck' if mode == 'recheck' else 'full')
@@ -777,13 +788,14 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         if slug not in TASK_SLUGS:
             abort(404)
         mode = request.form.get("mode", "inventory")
-        if (mode not in {"inventory", "sections", "redirects"}
+        if (mode not in {"inventory", "sections", "redirects", "formats"}
                 or mode == "sections" and "section_templates" not in get_config(store, slug)
-                or mode == "redirects" and get_task(slug).processor != "sections"):
+                or mode == "redirects" and get_task(slug).processor != "sections"
+                or mode == "formats" and get_task(slug).processor != 'categories'):
             abort(400)
         store.enqueue("refresh:" + slug, mode, time.time(), title=slug, processor=get_task(slug).processor + "-monitor",
                       requested_by=session["username"])
-        flash("Запрошено обновление счётчиков." if mode == "inventory" else "Запрошено обновление перенаправлений." if mode == "redirects" else "Запрошено обновление списка шаблонов из категории.")
+        flash("Запрошено обновление счётчиков." if mode == "inventory" else "Запрошено обновление перенаправлений." if mode == "redirects" else "Запрошено обновление форматов из вики-таблицы." if mode == 'formats' else "Запрошено обновление списка шаблонов из категории.")
         return redirect(url_for("processor", slug=get_task(slug).processor, task=slug))
 
     @app.route("/login")

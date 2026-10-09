@@ -4,7 +4,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from ..execution import execution_slot, ready_jobs
-from ..schedules import get_schedule, next_daily_time
+from ..schedules import get_schedule, next_daily_time, next_weekly_time, next_month_end_time
+from . import get_task
 from ..wiki import WikiClient
 from ..runtime import execution_settings, job_enabled
 
@@ -48,10 +49,22 @@ class DailyWorker:
             return
         if not self.store.get_state(self.slug + ':schedule_started_at'):
             self.store.set_state(self.slug + ':schedule_started_at', now)
-        if not any(job["kind"] == "daily" for job in self.store.queue(self.slug)):
-            due = next_daily_time(get_schedule(self.settings, self.store, self.slug)["run_time"], now)
+        schedule = get_schedule(self.settings, self.store, self.slug)
+        kinds = get_task(self.slug).schedules
+        deadlines = {}
+        if 'daily' in kinds:
+            deadlines['daily'] = next_daily_time(schedule['run_time'], now)
+        if 'weekly' in kinds:
+            deadlines['weekly'] = next_weekly_time(schedule['run_time'], schedule['weekday'], now)
+        if 'month_end' in kinds:
+            deadlines['month_end'] = next_month_end_time(schedule['month_end_time'], now)
+        if deadlines.get('weekly') == deadlines.get('month_end') and 'weekly' in deadlines:
+            del deadlines['weekly']
+        for kind, due in deadlines.items():
+            if any(job['kind'] == kind for job in self.store.queue(self.slug)):
+                continue
             date = datetime.fromtimestamp(due, MOSCOW).date().isoformat()
-            self.store.enqueue("daily:" + date, "daily", due, processor=self.slug)
+            self.store.enqueue(kind + ':' + date, kind, due, processor=self.slug)
 
 
     def execute(self, job):

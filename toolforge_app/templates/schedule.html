@@ -6,14 +6,14 @@
     <form class="schedule-form" action="{{ url_for('task_schedule', slug=task_state.task.slug) }}" method="post">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       {% for field in task_state.schedule_fields %}
-      <label>{{ 'Поиск каждые' if field.kind == 'search' else 'После правки' if field.kind == 'after_edit' else field.label }}<span class="schedule-input"><input aria-label="{{ field.label }}" type="{{ field.input_type }}" name="{{ field.key }}" value="{{ field.value }}" {% if field.input_type == 'time' %}step="60"{% else %}min="{{ field.minimum }}" max="{{ field.maximum }}"{% endif %} required><span>{{ field.unit }}</span></span></label>
+      <label>{{ 'Поиск каждые' if field.kind == 'search' else 'После правки' if field.kind == 'after_edit' else field.label }}<span class="schedule-input">{% if field.kind == 'weekday' %}<select aria-label="{{ field.label }}" name="{{ field.key }}">{% for day in ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'] %}<option value="{{ loop.index0 }}" {{ 'selected' if field.value == loop.index0 }}>{{ day }}</option>{% endfor %}</select>{% else %}<input aria-label="{{ field.label }}" type="{{ field.input_type }}" name="{{ field.key }}" value="{{ field.value }}" {% if field.input_type == 'time' %}step="60"{% else %}min="{{ field.minimum }}" max="{{ field.maximum }}"{% endif %} required>{% endif %}<span>{{ field.unit }}</span></span></label>
       {% endfor %}
       <button class="button secondary icon-button schedule-save" type="submit" aria-label="Сохранить расписание" title="Сохранить расписание">{{ icon('save') }}</button>
     </form>
     {% else %}
     <dl class="schedule-rules">
       {% for field in task_state.schedule_fields %}
-      <div><dt>{{ 'Форматирование' if field.kind == 'month_end' else field.label }}</dt><dd>{% if field.kind == 'search' %}{{ field.value|search_frequency }}{% elif field.kind == 'after_edit' %}Через {{ field.value }} минут{% elif field.kind == 'month_end' %}Последний день месяца · <span class="schedule-time">{{ field.value }} МСК</span>{% else %}{{ field.value }} МСК{% endif %}</dd></div>
+      <div><dt>{{ 'Полная проверка' if field.kind == 'month_end' and task_state.processor.slug == 'categories' else 'Форматирование' if field.kind == 'month_end' else field.label }}</dt><dd>{% if field.kind == 'search' %}{{ field.value|search_frequency }}{% elif field.kind == 'weekday' %}{{ ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'][field.value] }}{% elif field.kind == 'after_edit' %}Через {{ field.value }} минут{% elif field.kind == 'month_end' %}Последний день месяца · <span class="schedule-time">{{ field.value }} МСК</span>{% else %}{{ field.value }} МСК{% endif %}</dd></div>
       {% endfor %}
     </dl>
     {% endif %}

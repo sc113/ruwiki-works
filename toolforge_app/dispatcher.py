@@ -8,18 +8,21 @@ from .processors.translations import TASK_SLUGS as TRANSLATION_TASKS
 from .processors.translations.service import TranslationWorker, TranslationMonitor
 from .processors.sections import TASK_SLUGS as SECTION_TASKS
 from .processors.sections.service import SectionWorker, SectionMonitor
+from .processors.categories import TASK_SLUGS as CATEGORY_TASKS
+from .processors.categories.service import CategoryWorker, CategoryMonitor
 from .health import system_status
 from .runtime import ObservationPaused, service_enabled
 from .execution import ready_jobs
 
 
 class Dispatcher:
-    def __init__(self, settings, store, *, obkat=None, maintenance=None, translations=None, sections=None):
+    def __init__(self, settings, store, *, obkat=None, maintenance=None, translations=None, sections=None, categories=None):
         self.settings, self.store = settings, store
         self.obkat = obkat or Worker(settings, store)
         self.maintenance = maintenance if maintenance is not None else [MaintenanceWorker(settings, store, slug) for slug in TASK_SLUGS]
         self.translations = translations if translations is not None else [TranslationWorker(settings, store, slug) for slug in TRANSLATION_TASKS]
         self.sections = sections if sections is not None else [SectionWorker(settings, store, slug) for slug in SECTION_TASKS]
+        self.categories = categories if categories is not None else [CategoryWorker(settings, store, slug) for slug in CATEGORY_TASKS]
 
     def tick(self, now=None):
         now = time.time() if now is None else now
@@ -38,9 +41,9 @@ class Dispatcher:
                 renew()
                 self.store.set_state('executor_heartbeat', time.time())
             # Queue every daily action before beginning the first one.
-            for worker in [*self.maintenance, *self.translations, *self.sections]:
+            for worker in [*self.maintenance, *self.translations, *self.sections, *self.categories]:
                 worker.schedule(now)
-            workers = [self.obkat, *self.maintenance, *self.translations, *self.sections]
+            workers = [self.obkat, *self.maintenance, *self.translations, *self.sections, *self.categories]
             requested = self.store.pending_run_requests()
             manual_order = {job['processor']: index for index, job in reversed(list(enumerate(ready_jobs(self.store))))
                             if job['key'] in requested}
@@ -85,9 +88,11 @@ class Monitor:
         self.inventory = InventoryMonitor(settings, store)
         self.translations = TranslationMonitor(settings, store)
         self.sections = SectionMonitor(settings, store)
+        self.categories = CategoryMonitor(settings, store)
         self.schedulers = ([MaintenanceWorker(settings, store, slug) for slug in TASK_SLUGS]
                            + [TranslationWorker(settings, store, slug) for slug in TRANSLATION_TASKS]
-                           + [SectionWorker(settings, store, slug) for slug in SECTION_TASKS])
+                           + [SectionWorker(settings, store, slug) for slug in SECTION_TASKS]
+                           + [CategoryWorker(settings, store, slug) for slug in CATEGORY_TASKS])
 
     def tick(self):
         if not self.store.get_state('monitor_started_at'):
@@ -100,7 +105,7 @@ class Monitor:
         if not service_enabled(self.store, 'monitor'):
             system_status(self.settings, self.store)
             return
-        for monitor in (self.inventory, self.translations, self.sections):
+        for monitor in (self.inventory, self.translations, self.sections, self.categories):
             monitor.outer_renew = heartbeat
         previous_renew = self.obkat.outer_renew
         self.obkat.outer_renew = heartbeat
@@ -109,7 +114,7 @@ class Monitor:
         finally:
             self.obkat.outer_renew = previous_renew
         for monitor, slugs in ((self.inventory, TASK_SLUGS), (self.translations, TRANSLATION_TASKS),
-                               (self.sections, SECTION_TASKS)):
+                               (self.sections, SECTION_TASKS), (self.categories, CATEGORY_TASKS)):
             try:
                 monitor.tick()
             except ObservationPaused:

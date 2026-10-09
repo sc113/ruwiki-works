@@ -1,0 +1,13 @@
+{% if report.monitor_error %}<div class="notice">Не удалось обновить данные: {{ report.monitor_error.code }}. Следующая попытка — по расписанию поиска.</div>{% endif %}
+<div class="report-content-heading"><h3>{{ 'Непустые категории без страницы' if active == 'missing' else 'Категории к созданию' if active == 'pending' and task.slug == 'categories-create' else 'Категории к проверке' if active == 'pending' else 'Проблемы и оповещения' }}</h3>{% if active == 'pending' and task.slug == 'categories-format' %}<span class="muted-value">{{ report.checked }} уже проверено</span>{% endif %}</div>
+{% if active == 'missing' %}
+  <p class="report-notice">Все непустые категории без страницы. Автоматическое создание применяется только к месячным категориям с известным форматом.{% if report.latest_check and not report.complete %} Сейчас показан только префикс «{{ config.category_prefix }}»; полный список доступен через базу реплик на Toolforge.{% endif %}</p>
+  <form class="report-filters" method="get"><input type="hidden" name="task" value="{{ task.slug }}"><input type="hidden" name="view" value="missing"><input type="search" name="q" value="{{ query }}" placeholder="Найти категорию…" aria-label="Найти категорию"><button class="button secondary">Найти</button></form>
+{% endif %}
+{% if active in ['pending', 'missing'] %}
+  {% if items %}<ul class="category-list category-candidates" aria-label="Категории">
+    {% for item in items %}<li><a href="{{ wiki_url(item.title) }}" target="_blank" rel="noopener">{{ item.title.removeprefix('Категория:') }} ↗</a><span class="muted-value">{% if active == 'missing' or task.slug == 'categories-create' %}{{ item.count }} страниц{% else %}{{ 'Сложный формат' if item.kind == 'complex' else 'Обычный формат' }}{% endif %}</span></li>{% endfor %}
+  </ul>{% else %}<div class="empty-message">{{ 'Категории не найдены' if active == 'missing' and query else 'Категорий к обработке нет' if report.latest_check else 'Список категорий ещё не получен' }}</div>{% endif %}
+{% else %}
+  {% if items %}<div class="problem-list"><div class="problem-list-head" aria-hidden="true"><span>Категория</span><span>Что исправить</span></div>{% for item in items %}<article class="problem-item"><div class="problem-subject"><h3><a href="{{ wiki_url(item.title) }}" target="_blank" rel="noopener">{{ item.title.removeprefix('Категория:') }} ↗</a></h3>{% include 'problem_history.html' %}</div><div class="problem-action"><p class="fix-guidance">{{ item.reason }}</p></div></article>{% endfor %}</div>{% else %}<div class="empty-message">Ручных исправлений не требуется</div>{% endif %}
+{% endif %}

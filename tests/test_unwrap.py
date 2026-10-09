@@ -145,7 +145,7 @@ def test_monitor_tracks_all_three_categories_and_unwrap_has_independent_controls
     store.change_control(UNWRAP, 'stop', 'admin')
     MaintenanceWorker(settings, store, UNWRAP, MaintenanceWiki()).tick()
     assert not store.queue(UNWRAP) and store.control('maintenance-rq')['mode'] == 'active'
-    assert len(build_overview(settings, store)['cards']) == 8
+    assert len(build_overview(settings, store)['cards']) == 10
 
 
 def test_admin_can_edit_unwrap_settings_without_date_or_conversion_settings(settings, store):

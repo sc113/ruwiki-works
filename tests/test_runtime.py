@@ -31,7 +31,7 @@ def test_paused_executor_stays_online_and_leaves_queue_intact(settings, store):
     store.enqueue('manual', 'full', 1)
     workers = [Mock() for _ in range(8)]
     dispatcher = Dispatcher(settings, store, obkat=workers[0], maintenance=workers[1:4],
-                            translations=workers[4:6], sections=workers[6:8])
+                            translations=workers[4:6], sections=workers[6:8], categories=[])
     assert dispatcher.tick()
     assert component_health(settings, store, 'executor')['online']
     assert not component_health(settings, store, 'executor')['enabled']
