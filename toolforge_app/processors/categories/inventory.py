@@ -1,4 +1,4 @@
-"""Replica queries, bounded API fallback, and one compressed missing-category snapshot."""
+"""Discover and retain only monthly categories covered by the configured formats."""
 import base64
 import hashlib
 import json
@@ -35,15 +35,16 @@ def replica_snapshot(prefix):
                              connect_timeout=5, read_timeout=25) as conn:
             with conn.cursor() as cur:
                 cur.execute('SET max_statement_time=20')
+                like = prefix.replace('\\', '\\\\').replace('_', '\\_').replace('%', '\\%').replace(' ', '\\_') + '%'
                 cur.execute('SELECT c.cat_title,c.cat_pages FROM category c LEFT JOIN page p '
                             'ON p.page_namespace=14 AND p.page_title=c.cat_title '
-                            'WHERE c.cat_pages>0 AND p.page_id IS NULL ORDER BY c.cat_title')
+                            'WHERE c.cat_pages>0 AND p.page_id IS NULL AND c.cat_title LIKE %s '
+                            'ORDER BY c.cat_title', (like,))
                 missing = [('Категория:' + decode(title).replace('_', ' '), count) for title, count in cur.fetchall()]
-                like = prefix.replace('\\', '\\\\').replace('_', '\\_').replace('%', '\\%').replace(' ', '\\_') + '%'
                 cur.execute('SELECT page_title,page_latest FROM page WHERE page_namespace=14 '
                             'AND page_is_redirect=0 AND page_title LIKE %s ORDER BY page_title', (like,))
                 existing = [('Категория:' + decode(title).replace('_', ' '), revision) for title, revision in cur.fetchall()]
-        return dict(missing=missing, existing=existing, backend='replica', complete=True)
+        return dict(missing=missing, existing=existing, backend='replica')
     except (pymysql.MySQLError, OSError, ValueError):
         # Never expose credential files, connection strings or database errors in reports.
         raise WikiError('category-replica-unavailable') from None
@@ -70,16 +71,16 @@ def api_snapshot(wiki, prefix):
         if 'continue' not in data:
             break
         params.update(data['continue'])
-    # A full-wiki API scan would require thousands of requests. The replica provides that report.
-    return dict(missing=missing, existing=existing, backend='api', complete=False)
+    return dict(missing=missing, existing=existing, backend='api')
 
 
-def snapshot_key(prefix):
-    return 'categories:snapshot:' + hashlib.sha256(prefix.encode()).hexdigest()[:40]
+def snapshot_key(config):
+    scope = json.dumps(selection(config), sort_keys=True, ensure_ascii=False)
+    return 'categories:scope:' + hashlib.sha256(scope.encode()).hexdigest()[:40]
 
 
-def snapshot(store, prefix):
-    key = snapshot_key(prefix)
+def snapshot(store, config):
+    key = snapshot_key(config)
     header = store.get_state(key + ':header')
     if not header:
         return None
@@ -93,31 +94,42 @@ def snapshot(store, prefix):
         return result
 
 
-def refresh_snapshot(wiki, store, prefix, *, force=True, now=None):
+def refresh_snapshot(wiki, store, config, formats, *, force=True, now=None):
     now = time.time() if now is None else now
-    cached = snapshot(store, prefix)
-    if cached and not force and now - cached['at'] < 60:
+    cached = snapshot(store, config)
+    if cached and not force and now - cached['at'] < 60 and cached['format_signature'] == formats['signature']:
         return cached
     wiki.request_guard()
-    result = replica_snapshot(prefix) or api_snapshot(wiki, prefix)
+    scan = replica_snapshot(config['category_prefix']) or api_snapshot(wiki, config['category_prefix'])
     wiki.request_guard()
-    # Keep the full list once, outside per-action reports and run archives.
+    current = datetime.fromtimestamp(now, MOSCOW)
+    first, last = (config['start_year'], config['start_month']), (current.year, current.month)
+    result = dict(backend=scan['backend'], missing=[], existing=[])
+    for kind in ('missing', 'existing'):
+        for title, value in scan[kind]:
+            date = date_of(title)
+            if not date or kind == 'existing' and not first <= date <= last:
+                continue
+            if expected_category(title, formats, config):
+                result[kind].append((title, value))
+    # Persist just the working set; unrelated missing categories are never retained.
     version = uuid.uuid4().hex
     packed = base64.b64encode(zlib.compress(json.dumps(result, ensure_ascii=False).encode(), 6)).decode('ascii')
     with store.engine.begin() as conn:
-        store._set_state(conn, snapshot_key(prefix), packed)
-        store._set_state(conn, snapshot_key(prefix) + ':header', dict(at=now, version=version))
-    return snapshot(store, prefix)
+        store._set_state(conn, snapshot_key(config), packed)
+        store._set_state(conn, snapshot_key(config) + ':header',
+                        dict(at=now, version=version, format_signature=formats['signature']))
+    return snapshot(store, config)
 
 
 def refresh_inventory(wiki, store, slug, config=None, *, scan=None, formats=None, force=True, now=None):
     config = config or get_config(store, slug)
     now = time.time() if now is None else now
     formats = formats or refresh_formats(wiki, store, config)
-    scan = scan or refresh_snapshot(wiki, store, config['category_prefix'], force=force, now=now)
+    scan = scan or refresh_snapshot(wiki, store, config, formats, force=force, now=now)
     creates = slug == 'categories-create'
     current = (datetime.fromtimestamp(now, MOSCOW).year, datetime.fromtimestamp(now, MOSCOW).month)
-    rows, unknown = {}, []
+    rows = {}
     for title, value in scan['missing' if creates else 'existing']:
         if not title.startswith('Категория:' + config['category_prefix']):
             continue
@@ -128,40 +140,27 @@ def refresh_inventory(wiki, store, slug, config=None, *, scan=None, formats=None
         if expected:
             rows[title] = (dict(count=value, kind=expected['kind']) if creates else
                            dict(revision=value, kind=expected['kind'], format_signature=expected['signature']))
-        elif creates and config['check_simple'] and config['check_complex']:
-            unknown.append(dict(title=title, reason='В таблице нет формата для этой месячной категории. '
-                                'Добавьте определение в вики-таблицу или создайте страницу вручную.', categories=[]))
-    if creates and (rows or unknown):
+    if creates and rows:
         # Replicas can lag behind a successful save or a human-created page.
         # Validate this small monthly subset against the live API before counting it.
-        live = wiki.category_pages(list(rows) + [item['title'] for item in unknown])
+        live = wiki.category_pages(list(rows))
         def still_missing(title):
             page = live.get(title, {})
             return page.get('base') and page['base'].missing and page.get('population', 0) > 0
         rows = {title: dict(row, count=live[title]['population']) for title, row in rows.items() if still_missing(title)}
-        unknown = [item for item in unknown if still_missing(item['title'])]
     result = dict(articles=rows, total=len(rows), checked_at=now, selection=selection(config),
                   format_signature=formats['signature'], format_revision=formats['revision'],
-                  missing_count=len(scan['missing']), complete=scan['complete'], backend=scan['backend'], unknown=unknown,
+                  backend=scan['backend'],
                   version=uuid.uuid4().hex)
     store.set_state(slug + ':inventory', result)
     store.set_state(slug + ':monitor_error', None)
     return result
 
 
-def proof(entry):
-    try:
-        return json.loads(entry.get('reason', ''))
-    except (ValueError, TypeError):
-        return {}
-
-
-def is_checked(entry, row, signature):
-    saved = proof(entry or {})
-    return (entry and entry['outcome'] in {'ok', 'edited', 'bot-excluded'}
-            # Our confirmed save is authoritative if the replica is still behind it.
-            and isinstance(saved.get('revision'), int) and saved['revision'] >= row.get('revision', 0)
-            and saved.get('signature') == row.get('format_signature', signature))
+def is_checked(entry):
+    # Weekly passes check new members of our set. Revisions and format changes
+    # are reconsidered in the explicit full pass, not in the weekly queue.
+    return bool(entry and entry['outcome'] in {'ok', 'edited', 'bot-excluded'})
 
 
 def report(store, slug, config=None):
@@ -173,10 +172,10 @@ def report(store, slug, config=None):
     formats = saved_formats(store, config)
     checked = store.checked_articles(slug) if slug == 'categories-format' else {}
     retries = {job['title'] for job in store.queue(slug) if job['kind'] == 'article'}
-    done = {title for title, row in current.items() if is_checked(checked.get(title), row, inv.get('format_signature'))}
-    pending = {title: row for title, row in current.items() if not config['resume'] or title not in done or title in retries}
+    done = {title for title in current if is_checked(checked.get(title))}
+    pending = {title: row for title, row in current.items() if title not in done or title in retries}
     result = store.get_state(slug + ':result', {})
-    manual = list(inv.get('unknown', []))
+    manual = []
     if result.get('selection') == selection(config) and result.get('format_signature') == inv.get('format_signature'):
         manual.extend(item for item in result.get('manual', []) if item['title'] in current)
     excluded = [dict(title=title, reason='На странице запрещена работа бота', categories=[])
@@ -187,14 +186,5 @@ def report(store, slug, config=None):
                 source=config['source_page'], sources=[config['source_page']], categories=[], excluded=excluded,
                 pending_articles=[dict(title=title, categories=[], **row) for title, row in sorted(pending.items())],
                 after_run=result.get('at'), monitor_error=store.get_state(slug + ':monitor_error'),
-                formats=formats, missing_count=inv.get('missing_count', 0), complete=inv.get('complete'),
+                formats=formats,
                 backend=inv.get('backend'), limited=False)
-
-
-def missing_page(store, config, query='', page=1):
-    scan = snapshot(store, config['category_prefix'])
-    rows = scan['missing'] if scan else []
-    if query:
-        rows = [row for row in rows if query.casefold() in row[0].casefold()]
-    offset = (page - 1) * 40
-    return [dict(title=title, count=count) for title, count in rows[offset:offset + 40]], len(rows) > offset + 40

@@ -1,4 +1,4 @@
-"""Two serial category actions with live diagnostics and revision-aware checks."""
+"""Two serial category actions with incremental weekly and full monthly passes."""
 import copy
 import json
 import time
@@ -10,7 +10,7 @@ from ..daily_worker import DailyWorker, Controlled
 from . import TASK_SLUGS
 from .config import get_config
 from .formats import expected_category, refresh_formats
-from .inventory import refresh_inventory, refresh_snapshot, report, selection, is_checked
+from .inventory import refresh_inventory, refresh_snapshot, report, selection, is_checked, snapshot_key
 
 LABELS = {
     'category-formats-invalid': 'Таблица форматов неполная или некорректная; правки не выполнялись',
@@ -64,9 +64,9 @@ class CategoryWorker(DailyWorker):
                        title=formats['source'], revision=formats['revision'])
             allowed = set(inventory['articles'])
             checks = self.store.checked_articles(self.slug) if not creates else {}
-            done = {title for title in allowed if is_checked(checks.get(title), inventory['articles'][title], formats['signature'])}
+            done = {title for title in allowed if is_checked(checks.get(title))}
             recheck = job['kind'] in {'recheck', 'month_end'}
-            candidates = allowed if creates or recheck or not config['resume'] else allowed - done
+            candidates = allowed if creates or recheck else allowed - done
             if job['kind'] == 'article':
                 candidates = allowed & {job['title']}
             selected = sorted(candidates)
@@ -203,10 +203,11 @@ class CategoryMonitor:
                     heartbeat()
                     if config['source_page'] not in definitions:
                         definitions[config['source_page']] = refresh_formats(self.wiki, self.store, config)
-                    if config['category_prefix'] not in scans:
-                        scans[config['category_prefix']] = refresh_snapshot(self.wiki, self.store, config['category_prefix'], now=now)
-                    refresh_inventory(self.wiki, self.store, slug, config, scan=scans[config['category_prefix']],
-                                      formats=definitions[config['source_page']], now=now)
+                    formats = definitions[config['source_page']]
+                    key = snapshot_key(config)
+                    if key not in scans:
+                        scans[key] = refresh_snapshot(self.wiki, self.store, config, formats, now=now)
+                    refresh_inventory(self.wiki, self.store, slug, config, scan=scans[key], formats=formats, now=now)
                 except WikiError as exc:
                     self.store.set_state(slug + ':monitor_error', dict(code=exc.code, at=now))
                 for job in requests:

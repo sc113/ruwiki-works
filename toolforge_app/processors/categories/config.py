@@ -9,7 +9,7 @@ from ...schedules import parse_clock
 def defaults(slug):
     return dict(source_page=SOURCE_PAGE, category_prefix='Википедия:', check_simple=True,
                 check_complex=True, start_year=2004, start_month=10, autosave=True,
-                resume=True, limit_categories=0, run_time='05:00' if slug == 'categories-format' else '04:00')
+                limit_categories=0, run_time='05:00')
 
 
 def fields(slug):
@@ -22,8 +22,7 @@ def fields(slug):
               ('run_time', 'Ежедневный запуск, МСК', 'time', 'Расписание')]
     if slug == 'categories-format':
         result += [('start_year', 'Проверять начиная с года', 'number', 'Обработка'),
-                   ('start_month', 'Начиная с месяца · 1–12', 'number', 'Обработка'),
-                   ('resume', 'Пропускать неизменённые проверенные категории', 'bool', 'Обработка')]
+                   ('start_month', 'Начиная с месяца · 1–12', 'number', 'Обработка')]
     return result
 
 
@@ -31,6 +30,7 @@ def get_config(store, slug):
     result = defaults(slug)
     result.update(copy.deepcopy(store.get_state(slug + ':config', {})))
     result.pop('debug_article', None)
+    result.pop('resume', None)
     return result
 
 

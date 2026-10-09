@@ -8,7 +8,7 @@ import pytest
 from toolforge_app.processors.categories.config import defaults, parse_form
 from toolforge_app.processors.categories.formats import SOURCE_PAGE, expected_category, parse_formats
 from toolforge_app.processors.categories.inventory import (api_snapshot, refresh_inventory, report, snapshot_key,
-                                                         missing_page, refresh_formats)
+                                                         snapshot, refresh_formats)
 from toolforge_app.processors.categories.service import CategoryWorker, CategoryMonitor
 from toolforge_app.schedules import get_schedule, next_weekly_time, save_schedule
 from toolforge_app.web import create_app
@@ -113,7 +113,7 @@ def test_creation_reads_current_population_and_uses_original_comment(settings, s
     assert report(store, CREATE)['to_process'] == 0
     run = store.list_runs(processor=CREATE)[0]
     assert run['status'] == 'success' and json.loads(run['summary'])['changed'] == 1
-    assert len(snapshot_key('Википедия:') + ':header') <= 80
+    assert len(snapshot_key(defaults(CREATE)) + ':header') <= 80
     assert 'formats' not in json.loads(run['report'])
 
 
@@ -123,7 +123,7 @@ def test_dry_run_never_saves_or_marks_categories_checked(settings, store, catego
     assert json.loads(store.list_runs(processor=FORMAT)[0]['summary'])['proposed'] == 1
 
 
-def test_formatter_incremental_revision_and_affected_format_invalidation(settings, store, category_wiki):
+def test_weekly_checks_only_unchecked_titles_even_after_revision_or_format_changes(settings, store, category_wiki):
     settings.wiki_write = True
     worker = CategoryWorker(settings, store, FORMAT, category_wiki)
     worker.execute(queue(store, FORMAT))
@@ -131,7 +131,7 @@ def test_formatter_incremental_revision_and_affected_format_invalidation(setting
     category_wiki.reads.clear()
     worker.execute(queue(store, FORMAT))
     assert not category_wiki.reads
-    # A different format changes; this category's checked proof remains valid.
+    # Neither unrelated nor applicable format changes invalidate the weekly ledger.
     category_wiki.table = TABLE.replace('val=en', 'val=fr')
     category_wiki.source_revision += 1
     worker.execute(queue(store, FORMAT))
@@ -139,12 +139,16 @@ def test_formatter_incremental_revision_and_affected_format_invalidation(setting
     category_wiki.table = category_wiki.table.replace('Проверить авторитетность</nowiki>', 'Проверить авторитетность|x=1</nowiki>')
     category_wiki.source_revision += 1
     worker.execute(queue(store, FORMAT))
-    assert category_wiki.reads == [OTHER] and len(category_wiki.edits) == 2
+    assert not category_wiki.reads and len(category_wiki.edits) == 1
     category_wiki.reads.clear()
     base = category_wiki.data[OTHER]
     category_wiki.data[OTHER] = Revision(OTHER, base.revision + 1, time.time(), base.text + '\nExtra')
-    worker.execute(queue(store, FORMAT))
-    assert category_wiki.reads == [OTHER]
+    worker.execute(queue(store, FORMAT, 'weekly'))
+    assert not category_wiki.reads and report(store, FORMAT)['to_process'] == 0
+    # The monthly full pass corrects it using the current format.
+    worker.execute(queue(store, FORMAT, 'month_end'))
+    assert category_wiki.reads == [OTHER] and len(category_wiki.edits) == 2
+    assert category_wiki.edits[-1][1] == '{{Категория к ежемесячной очистке|Проверить авторитетность|x=1}}'
 
 
 def test_month_end_forces_full_check_and_keeps_history(settings, store, category_wiki):
@@ -197,7 +201,7 @@ def test_exclusions_and_page_failures_are_not_run_errors(settings, store, catego
     assert report(store, FORMAT)['excluded'] and report(store, FORMAT)['problems'] == 0
     category_wiki.error = 'network'
     category_wiki.data[OTHER] = Revision(OTHER, 9, 1, 'old')
-    CategoryWorker(settings, store, FORMAT, category_wiki).execute(queue(store, FORMAT))
+    CategoryWorker(settings, store, FORMAT, category_wiki).execute(queue(store, FORMAT, 'month_end'))
     assert store.list_runs(processor=FORMAT)[0]['status'] == 'failed'
 
 
@@ -205,10 +209,9 @@ def test_public_reports_and_admin_controls(settings, store, category_wiki):
     CategoryMonitor(settings, store, category_wiki).tick(force=True)
     client = create_app(settings, store).test_client()
     public = client.get('/processors/categories').get_data(as_text=True)
-    assert 'Создание категорий' in public and 'Проверка оформления' in public and 'Без страницы' in public
+    assert 'Создание категорий' in public and 'Проверка оформления' in public and 'Без страницы' not in public
     assert '/admin/tasks/categories-create/settings' not in public
-    missing = client.get('/processors/categories?view=missing&q=Другое').get_data(as_text=True)
-    assert 'Другое' in missing and '5 страниц' in missing
+    assert client.get('/processors/categories?view=missing').status_code == 404
     set_session(client, 'admin')
     admin = client.get('/processors/categories?task=categories-format').get_data(as_text=True)
     assert '/admin/tasks/categories-format/settings' in admin and 'С нуля' in admin
@@ -223,6 +226,8 @@ def test_public_reports_and_admin_controls(settings, store, category_wiki):
 
 
 def test_weekly_and_month_end_schedule_are_independent_and_editable(settings, store):
+    assert get_schedule(settings, store, CREATE)['run_time'] == '05:00'
+    assert defaults(CREATE)['run_time'] == '05:00'
     assert get_schedule(settings, store, FORMAT) == dict(search_minutes=360, run_time='05:00', weekday=0, month_end_time='05:00')
     now = datetime(2026, 10, 9, 12, tzinfo=settings.zone).timestamp()
     CategoryWorker(settings, store, FORMAT).schedule(now)
@@ -250,7 +255,7 @@ def test_api_creation_flags_and_scope_guard(settings):
         wiki.edit_category(Revision('Статья', missing=True), 'new', 'comment', {'Статья'}, create=True)
 
 
-def test_api_fallback_paginates_and_marks_global_report_incomplete(settings):
+def test_api_fallback_paginates_within_configured_prefix(settings):
     wiki = WikiClient(settings)
     wiki.request = Mock(side_effect=[
         {'query': {'pages': [{'title': TITLE, 'missing': True, 'categoryinfo': {'size': 3}}]}, 'continue': {'gaccontinue': 'NEXT'}},
@@ -258,7 +263,8 @@ def test_api_fallback_paginates_and_marks_global_report_incomplete(settings):
         {'query': {'pages': [{'title': OTHER, 'lastrevid': 7}]}}])
     result = api_snapshot(wiki, 'Википедия:')
     assert result['missing'] == [(TITLE, 3)] and result['existing'] == [(OTHER, 7)]
-    assert not result['complete'] and result['backend'] == 'api'
+    assert result['backend'] == 'api'
+    assert wiki.request.call_args_list[0].args[0]['gacprefix'] == 'Википедия:'
     assert wiki.request.call_args_list[1].args[0]['gaccontinue'] == 'NEXT'
 
 
@@ -294,3 +300,47 @@ def test_replica_lag_does_not_leave_saved_categories_pending(settings, store, ca
     category_wiki.reads.clear()
     CategoryWorker(settings, store, FORMAT, category_wiki).execute(queue(store, FORMAT))
     assert not category_wiki.reads
+
+
+def test_snapshots_store_only_our_set_and_formatting_never_creates_missing_categories(settings, store, category_wiki):
+    unrelated = 'Категория:Википедия:Другое с октября 2026 года'
+    future = OTHER.replace('октября 2026', 'января 2027')
+    old = OTHER.replace('октября 2026', 'сентября 2004')
+    category_wiki.data.update({unrelated: Revision(unrelated, 50, 1, 'leave unchanged'),
+                               future: Revision(future, 51, 1, 'future'), old: Revision(old, 52, 1, 'old')})
+    missing_unrelated = 'Категория:Википедия:Неизвестное с октября 2026 года'
+    category_wiki.population[missing_unrelated] = 4
+    settings.wiki_write = True
+    CategoryWorker(settings, store, FORMAT, category_wiki).execute(queue(store, FORMAT, 'month_end'))
+    assert [edit[0] for edit in category_wiki.edits] == [OTHER]
+    scan = snapshot(store, defaults(FORMAT))
+    assert set(title for title, _ in scan['existing']) == {OTHER}
+    assert set(title for title, _ in scan['missing']) == {TITLE}
+    assert 'Другое' not in json.dumps(scan, ensure_ascii=False) and 'Неизвестное' not in json.dumps(scan, ensure_ascii=False)
+    assert category_wiki.data[TITLE].missing
+    assert 'missing_count' not in report(store, FORMAT)
+
+
+def test_weekly_discovers_new_members_and_monthly_ignores_deleted_members(settings, store, category_wiki):
+    settings.wiki_write = True
+    worker = CategoryWorker(settings, store, FORMAT, category_wiki)
+    worker.execute(queue(store, FORMAT, 'weekly'))
+    # A category created since the last pass is checked once on the next Monday.
+    category_wiki.data[TITLE] = Revision(TITLE, 100, 1, 'new category with old format')
+    category_wiki.reads.clear()
+    worker.execute(queue(store, FORMAT, 'weekly'))
+    assert category_wiki.reads == [TITLE]
+    category_wiki.data[OTHER] = Revision(OTHER, missing=True)
+    category_wiki.reads.clear()
+    worker.execute(queue(store, FORMAT, 'month_end'))
+    assert category_wiki.reads == [TITLE] and category_wiki.data[OTHER].missing
+
+
+def test_retired_resume_toggle_cannot_make_weekly_pass_recheck_all(settings, store, category_wiki):
+    settings.wiki_write = True
+    store.set_state(FORMAT + ':config', {'resume': False})
+    worker = CategoryWorker(settings, store, FORMAT, category_wiki)
+    worker.execute(queue(store, FORMAT, 'weekly'))
+    category_wiki.reads.clear()
+    worker.execute(queue(store, FORMAT, 'weekly'))
+    assert not category_wiki.reads and report(store, FORMAT)['to_process'] == 0

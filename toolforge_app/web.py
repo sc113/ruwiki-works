@@ -486,17 +486,12 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             views = {'problems', 'pending', 'logs'}
             if slug in {'translations', 'sections'}:
                 views.add('skipped')
-            if slug == 'categories':
-                views.add('missing')
             if active not in views:
                 abort(404)
             result_items = report["pending_articles"] if active == "pending" else report["skipped_articles"] if active == "skipped" else report["manual"]
             items = result_items[(page_number - 1) * 40:page_number * 40]
             has_next = len(result_items) > page_number * 40
             query = request.args.get('q', '').strip()[:255]
-            if slug == 'categories' and active == 'missing':
-                from .processors.categories.inventory import missing_page
-                items, has_next = missing_page(store, config, query, page_number)
             config_fields = [dict(key=key, label=label, kind=kind, group=group, value=form_value(config, key, kind))
                              for key, label, kind, group in fields(task_slug)]
             return render_template("daily.html", module=module, active=active, task=task_state["task"], actions=actions,
