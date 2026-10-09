@@ -65,7 +65,7 @@ def statistics(store, zone, month=None, now=None):
                 value['pages'].add(event['title'])
                 if get_task(slug).processor != 'obkat':
                     value['articles'].add(event['title'])
-                value['templates'] += len(event.get('changes') or [])
+                value['templates'] += event.get('template_count', len(event.get('changes') or []))
 
     return dict(month=selected.strftime('%Y-%m'), total=public_bucket(total),
         today=public_bucket(days.get(current.strftime('%Y-%m-%d'), bucket())),

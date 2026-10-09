@@ -180,6 +180,14 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             return f'Каждые {hours} ч' if hours != 1 else 'Каждый час'
         return f'Каждые {minutes} мин' if minutes != 1 else 'Каждую минуту'
 
+    @app.template_filter('filesize')
+    def filesize(value):
+        value = float(value or 0)
+        for unit in ('Б', 'КиБ', 'МиБ', 'ГиБ'):
+            if value < 1024 or unit == 'ГиБ':
+                return f'{value:.1f} {unit}'
+            value /= 1024
+
     @app.template_filter("duration")
     def duration(run):
         elapsed = max(0, (run["finished_at"] or time.time()) - run["started_at"])
@@ -259,7 +267,9 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             connections=connection_summary(current, store), connection_error=connection_error,
             bot_login=current.bot_login, rights=RIGHTS, database_kind=store.engine.dialect.name,
             overview=build_overview(settings, store), write_ceiling=settings.wiki_write,
-            writes_allowed=writes_enabled(settings, store))
+            writes_allowed=writes_enabled(settings, store),
+            storage_usage=store.get_state('storage:maintenance', {}),
+            storage_error=store.get_state('storage:maintenance_error'))
 
     @app.route('/admin/services/<name>', methods=['POST'])
     @admin_required
@@ -466,7 +476,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
                 page_number = max(1, int(request.args.get("page", 1)))
             except ValueError:
                 abort(400)
-            history = store.list_runs(26, offset=(history_page - 1) * 25, processor=task_slug)
+            history = store.list_runs(26, offset=(history_page - 1) * 25, processor=task_slug, details=False)
             for run in history:
                 run["summary"] = json.loads(run["summary"])
             config = get_config(store, task_slug)
@@ -506,7 +516,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         except ValueError:
             abort(400)
         total = len(items)
-        history = store.list_runs(limit=26, offset=(history_page - 1) * 25)
+        history = store.list_runs(limit=26, offset=(history_page - 1) * 25, details=False)
         for run in history:
             run["summary"] = json.loads(run["summary"])
         for item in items:
@@ -570,6 +580,8 @@ def create_app(settings=None, store=None, *, admin_preview=False):
     def plain_log(run):
         lines = [localtime(run["started_at"]) + " · " + KIND_LABELS.get(run["kind"], run["kind"]),
                  STATUS_LABELS.get(run["status"], run["status"]) + (" · Режим проверки" if run["dry_run"] else ""), ""]
+        if run.get('details_expired_at') or run['report'].get('_details_expired_at'):
+            lines.append('Подробные диагностические данные удалены по сроку хранения. Результаты страниц сохранены.\n')
         for event in run["events"]:
             if not full_logs():
                 symbol = {'success': '✓', 'error': '✕', 'warning': '!', 'running': '…', 'preview': '◇'}.get(event.get('tone'), '·')
@@ -610,6 +622,8 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             if not run or run["processor"] != "obkat":
                 abort(404)
             report = json.loads(run["report"])
+            if report.get('_details_expired_at'):
+                abort(410, 'Срок хранения полного снимка отчёта истёк. Итоги запуска и результаты страниц сохранены.')
             if not report:
                 abort(409)
         else:
@@ -644,6 +658,8 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         run = store.run(run_id)
         if not run or run["processor"] != "obkat":
             abort(404)
+        if json.loads(run['report']).get('_details_expired_at'):
+            abort(410, 'Срок хранения снимка сводной страницы истёк.')
         return Response(run["table_text"], content_type="text/plain; charset=utf-8")
 
     @app.route("/admin/obkat/run", methods=["POST"])

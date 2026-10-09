@@ -25,7 +25,7 @@ def build_overview(settings, store, now=None):
     cards = []
     monitor = component_health(settings, store, 'monitor', now)
     waiting = ready_jobs(store, now, exclude_running=True)
-    active_runs = [run for run in store.list_runs(20, processor=None, exclude_import=True) if run["status"] == "running"]
+    active_runs = [run for run in store.list_runs(20, processor=None, exclude_import=True, details=False) if run["status"] == "running"]
     for task in TASKS:
         processor = get_processor(task.processor)
         if not task.enabled:
@@ -37,8 +37,8 @@ def build_overview(settings, store, now=None):
         config = get_config(store, task.slug) if maintenance else None
         schedule = get_schedule(settings, store, task.slug)
         report = daily_report(store, task.slug, config) if maintenance else annotate_report(store, task.slug, build_report(store.all_pages(processor.slug)))
-        history = store.list_runs(1, processor=task.slug, exclude_import=True)
-        imports = store.list_runs(1, processor=task.slug)
+        history = store.list_runs(1, processor=task.slug, exclude_import=True, details=False)
+        imports = store.list_runs(1, processor=task.slug, details=False)
         latest = history[0] if history else None
         control = store.control(task.slug)
         mode = control["mode"]

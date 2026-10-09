@@ -59,6 +59,7 @@ Copy-Item .env.example .env
 - [Флаги правок, ограничения и обработка ошибок](docs/API_SAFETY.md)
 - [Шаблоны о проблемах](docs/MAINTENANCE.md), [переводы](docs/TRANSLATIONS.md), [шаблоны разделов](docs/SECTIONS.md)
 - [Обсуждения категорий](docs/OBKAT.md), [состояния процессов](docs/HEALTH.md)
+- [Хранение журналов и отчётов](docs/STORAGE.md)
 
 ## Лицензия
 

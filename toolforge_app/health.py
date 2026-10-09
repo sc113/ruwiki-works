@@ -36,7 +36,7 @@ def system_status(settings, store, now=None):
                     alert('service:' + key, component['name'] + ' недоступен',
                           'Нет свежего сигнала от процесса. Проверьте фоновое задание Toolforge.')
     for task in tasks:
-        history = store.list_runs(1, processor=task.slug, exclude_import=True)
+        history = store.list_runs(1, processor=task.slug, exclude_import=True, details=False)
         latest = history[0] if history else None
         control = controls[task.slug]
         target = '/processors/' + task.processor + '?task=' + task.slug + '&view=problems#reports'
@@ -66,6 +66,14 @@ def system_status(settings, store, now=None):
                   'Счётчики или страницы не были обновлены в ожидаемый срок.', target)
 
     # A ready task waiting behind a running action has not missed its turn.
+    if store.get_state('storage:maintenance_error'):
+        alert('storage:maintenance', 'Ошибка обслуживания журналов',
+              'Автоматическая очистка журналов не завершилась. Проверьте настройки профиля.', '/admin#storage')
+    usage = store.get_state('storage:maintenance', {})
+    if usage.get('database_bytes', 0) >= 5 * 1024 ** 3:
+        alert('storage:size', 'База данных выросла до 5 ГиБ',
+              'Проверьте объём журналов и отчётов в настройках профиля.', '/admin#storage')
+
     if not running and components['executor']['enabled']:
         for task in tasks:
             if 'daily' not in task.schedules or controls[task.slug]['mode'] != 'active':
@@ -76,7 +84,7 @@ def system_status(settings, store, now=None):
             if not baseline:
                 continue
             deadline = next_daily_time(get_schedule(settings, store, task.slug)['run_time'], now) - 86400
-            recent = store.list_runs(1, processor=task.slug, exclude_import=True, started_from=deadline)
+            recent = store.list_runs(1, processor=task.slug, exclude_import=True, started_from=deadline, details=False)
             if deadline >= baseline and now - deadline > 900 and not recent:
                 alert('missed:' + task.slug, 'Пропущен запуск: ' + task.title,
                       'После времени ежедневного запуска прошло больше 15 минут; обработка не началась.', '/runs?task=' + task.slug)

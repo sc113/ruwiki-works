@@ -18,7 +18,7 @@ def ready_jobs(store, now=None, *, exclude_running=False):
     switch = store.get_state('service:executor', {}) or {}
     active = []
     if exclude_running:
-        for run in store.list_runs(20, processor=None, exclude_import=True):
+        for run in store.list_runs(20, processor=None, exclude_import=True, details=False):
             if run["status"] == "running":
                 active.extend((run["processor"], event["job"]) for event in json.loads(run["events"])
                               if event["code"] == "started" and event.get("job"))

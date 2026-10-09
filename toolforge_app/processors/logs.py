@@ -21,10 +21,16 @@ def public_run(run):
     result = {key: copy.deepcopy(run[key]) for key in
               ('id', 'processor', 'kind', 'started_at', 'finished_at', 'status', 'dry_run')}
     result.update(summary=public_summary(run['summary']), report={}, table_text='', spacing=False)
+    expired = run['report'].get('_details_expired_at')
+    if expired:
+        result['details_expired_at'] = expired
     result['summary'].setdefault('changed', 0)
     for field in ('problems', 'skipped'):
         if type(run['report'].get(field)) is int:
             result['summary'].setdefault('report_' + field, run['report'][field])
+    if expired or run['report'].get('_public_events'):
+        result['events'] = copy.deepcopy(run['events'])
+        return result
     events, pending = [], {}
     for event in run['events']:
         code, title = event['code'], event.get('title', '')
@@ -38,6 +44,10 @@ def public_run(run):
             continue
         tone, message = RESULTS[code]
         projected = dict(at=event['at'], code=code, title=title, message=message, tone=tone)
+        if code in {'edited', 'table_edited'} and type(event.get('revision')) is int:
+            projected['revision'] = event['revision']
+        if code in {'edited', 'table_edited'}:
+            projected['template_count'] = len(event.get('changes') or [])
         # Only saved edits expose template names and inserted values.
         if code == 'edited' and event.get('changes'):
             keys = (('template', 'replacement', 'section', 'action') if run['processor'].startswith('sections-') else

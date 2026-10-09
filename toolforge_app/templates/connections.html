@@ -39,4 +39,16 @@
 </section>
 <p class="connection-note">Выключение исполнителя приостанавливает автоматическую обработку и сохраняет очередь; ручной запуск остаётся доступен. Новая команда выключения прерывает текущий проход. Сигнал связи продолжает поступать. Сайт и базу останавливают через Toolforge.</p>
 <p class="connection-note">Сохранённые пароли и tokens не отображаются. Новые данные применяются без перезапуска. Проверки подключений не включают запись в Википедию.</p>
+<details class="connection-panel" id="storage">
+  <summary class="connection-heading"><h2>Журналы и хранение</h2><span class="muted-value">{{ storage_usage.database_bytes|filesize if storage_usage.checked_at else 'Ожидает проверки' }}</span></summary>
+  <div class="connection-details connection-content"><dl>
+    <div><dt>Подробные журналы и снимки отчётов</dt><dd>{{ settings.log_retention_days }} дней</dd></div>
+    <div><dt>История страниц и статистика</dt><dd>Без ограничения срока</dd></div>
+    {% if storage_usage.checked_at %}<div><dt>Проверено</dt><dd>{{ storage_usage.checked_at|localtime }}</dd></div>
+    <div><dt>Запуски</dt><dd>{{ storage_usage.runs }}</dd></div>
+    <div><dt>Данные журналов</dt><dd>{{ storage_usage.events_bytes|filesize }}</dd></div>
+    <div><dt>Сжатые снимки</dt><dd>{{ storage_usage.snapshot_bytes|filesize }}</dd></div>{% endif %}
+  </dl>{% if storage_error %}<p class="connection-error">Ошибка обслуживания журналов. Повторная попытка выполняется автоматически.</p>{% endif %}
+  <p class="connection-note">Обслуживание выполняется в фоне. Одинаковые большие списки хранятся в одном сжатом снимке. Отметки обработанных и пропущенных статей сохраняются. Размер базы включает выделенное место и индексы; после очистки оно используется повторно.</p></div>
+</details>
 {% endblock %}

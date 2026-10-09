@@ -5,9 +5,9 @@ import time
 import uuid
 from contextlib import contextmanager
 
-from sqlalchemy import (Boolean, Column, Float, Integer, MetaData, String, Table, or_,
-                        Text, create_engine, delete, insert, select, update)
-from sqlalchemy.dialects.mysql import DOUBLE, LONGTEXT
+from sqlalchemy import (Boolean, Column, Float, ForeignKey, Integer, LargeBinary, MetaData, String, Table, or_,
+                        Text, case, create_engine, delete, func, insert, literal, select, update)
+from sqlalchemy.dialects.mysql import DOUBLE, LONGTEXT, LONGBLOB
 from sqlalchemy.exc import IntegrityError
 from .run_status import normalize_run, status_expression
 
@@ -49,6 +49,14 @@ runs = Table("runs", metadata,
     Column("summary", large_text, nullable=False, default="{}"),
     Column("report", large_text, nullable=False, default="{}"),
     Column("table_text", large_text, nullable=False, default=""))
+run_payloads = Table("run_payloads", metadata,
+    Column("key", String(64), primary_key=True),
+    Column("data", LargeBinary().with_variant(LONGBLOB(), "mysql"), nullable=False),
+    Column("raw_bytes", Integer, nullable=False))
+run_payload_links = Table("run_payload_links", metadata,
+    Column("run_id", String(32), primary_key=True),
+    Column("field", String(64), primary_key=True),
+    Column("payload_key", String(64), ForeignKey('run_payloads.key'), nullable=False, index=True))
 state = Table("state", metadata,
     Column("key", String(80), primary_key=True),
     Column("value", large_text, nullable=False))
@@ -520,13 +528,18 @@ class Store:
 
     def finish_run(self, run_id, events, summary, report, table_text="", status="success"):
         from .issues import annotate_report
+        from .log_storage import pack_run, pack_diagnostics
         run = self.run(run_id)
         if run:
             report = annotate_report(self, run['processor'], report)
         result = normalize_run(dict(status=status, events=dump(events), summary=dump(summary), report=dump(report)))
         with self.engine.begin() as conn:
+            finished = time.time()
+            archive = {**run, **result, 'finished_at': finished} if run else None
+            report, table_text = pack_run(conn, run_id, report, table_text)
+            stored_events, report['_public_events'] = pack_diagnostics(conn, archive) if archive else (result['events'], False)
             conn.execute(update(runs).where(runs.c.id == run_id).values(
-                finished_at=time.time(), status=result['status'], events=result['events'],
+                finished_at=finished, status=result['status'], events=stored_events,
                 summary=dump(summary), report=dump(report), table_text=table_text))
 
     def update_progress(self, run_id, events):
@@ -546,9 +559,22 @@ class Store:
             if expired:
                 conn.execute(delete(state).where(state.c.key.in_(expired)))
 
-    def list_runs(self, limit=100, offset=0, processor="obkat", exclude_import=False, *, started_from=None, started_until=None, status=None, overlap=False):
+    def list_runs(self, limit=100, offset=0, processor="obkat", exclude_import=False, *, started_from=None, started_until=None, status=None, overlap=False, details=True, include_events=False, full_events=True):
         with self.engine.connect() as conn:
-            statement = select(runs)
+            if details:
+                statement = select(runs)
+            else:
+                # History and overview never fetch old report snapshots or diffs.
+                columns = [column for column in runs.c if column.name not in
+                           {'status', 'events', 'report', 'table_text'}]
+                event_column = runs.c.events if include_events else case(
+                    (runs.c.status == 'running', runs.c.events), else_=literal('[]'))
+                statement = select(*columns, status_expression(runs).label('status'),
+                    event_column.label('events'), literal('').label('table_text'),
+                    func.json_extract(runs.c.report, '$.problems').label('_problems'),
+                    func.json_extract(runs.c.report, '$.skipped').label('_skipped'),
+                    func.json_extract(runs.c.report, '$._public_events').label('_public_events'),
+                    func.json_extract(runs.c.report, '$._details_expired_at').label('_expired_at'))
             if processor is not None:
                 statement = statement.where(runs.c.processor == processor)
             if exclude_import:
@@ -560,13 +586,33 @@ class Store:
                 statement = statement.where(runs.c.started_at < started_until)
             if status:
                 statement = statement.where(status_expression(runs) == status)
-            return [normalize_run(r) for r in conn.execute(statement.order_by(
-                runs.c.started_at.desc()).offset(offset).limit(limit)).mappings()]
+            rows = []
+            for row in conn.execute(statement.order_by(
+                    runs.c.started_at.desc(), runs.c.id).offset(offset).limit(limit)).mappings():
+                if details:
+                    from .log_storage import hydrate_run
+                    row = hydrate_run(conn, row)
+                else:
+                    row = dict(row)
+                    row['report'] = dump({field: int(value) for field in ('problems', 'skipped')
+                        if (value := row.pop('_' + field)) is not None})
+                    expired = row.pop('_expired_at')
+                    projected = row.pop('_public_events')
+                    if projected in (1, 'true', True):
+                        row['report'] = dump({**json.loads(row['report']), '_public_events': True})
+                        if include_events and full_events:
+                            from .log_storage import hydrate_run
+                            row = hydrate_run(conn, row, reports=False)
+                    if expired is not None:
+                        row['report'] = dump({**json.loads(row['report']), '_details_expired_at': float(expired)})
+                rows.append(normalize_run(row))
+            return rows
 
     def run(self, run_id):
+        from .log_storage import hydrate_run
         with self.engine.connect() as conn:
             row = conn.execute(select(runs).where(runs.c.id == run_id)).mappings().first()
-            return normalize_run(row) if row else None
+            return normalize_run(hydrate_run(conn, row)) if row else None
 
     def statistics_runs(self, start, end):
         """Stream a bounded period without reports, wiki text or credentials."""

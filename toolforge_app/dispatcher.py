@@ -27,6 +27,10 @@ class Dispatcher:
             if not renew:
                 return False
             self.store.set_state("executor_heartbeat", now)
+            from .log_storage import maintenance_tick
+            maintenance_tick(self.settings, self.store, now)
+            renew()
+            self.store.set_state('executor_heartbeat', time.time())
             if not service_enabled(self.store, 'executor') and not ready_jobs(self.store, now):
                 system_status(self.settings, self.store)
                 return True

@@ -51,6 +51,8 @@ def main():
     serve.add_argument("--port", type=int, default=5000)
     serve.add_argument("--admin-preview", action="store_true", help="Local read-only preview of the administrator interface")
     commands.add_parser("init-db")
+    storage = commands.add_parser('maintain-storage', help='Compress reports and expire old diagnostics; preserve public history')
+    storage.add_argument('--batch-size', type=int, default=100)
     check = commands.add_parser('check-health', help='Read-only health probe for background jobs')
     check.add_argument('component', choices=('executor', 'monitor'))
     connection = commands.add_parser('check-connection', help='Read-only authentication check; never enables wiki writes')
@@ -74,7 +76,18 @@ def main():
     args = parser.parse_args()
     settings = Settings.from_env()
     store = Store(settings.database_url)
-    if args.command == 'clear-connection':
+    if args.command == 'maintain-storage':
+        import json
+        from .log_storage import maintain_storage, storage_usage
+        with store.worker_lease(processor='storage-maintenance') as renew:
+            if not renew:
+                parser.error('Storage maintenance is already running')
+            result = maintain_storage(store, retention_days=settings.log_retention_days, batch_size=args.batch_size)
+            result.update(storage_usage(store), checked_at=time.time(), retention_days=settings.log_retention_days)
+            store.set_state('storage:maintenance', result)
+            store.set_state('storage:maintenance_error', None)
+            print(json.dumps(result))
+    elif args.command == 'clear-connection':
         store.clear_connection_secret(args.name)
         store.pop_state('connection:' + args.name)
         print('Saved override removed. Server environment credentials will be used; wiki write mode unchanged.')

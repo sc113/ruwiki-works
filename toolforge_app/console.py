@@ -60,7 +60,7 @@ def run_metrics(run, *, compact=False):
 
 def run_history(store, selected="", *, page=1, limit=25, started_from=None, started_until=None, status=None):
     rows = store.list_runs(limit + 1, offset=(page - 1) * limit, processor=selected or None,
-                          exclude_import=True, started_from=started_from, started_until=started_until, status=status)
+                          exclude_import=True, started_from=started_from, started_until=started_until, status=status, details=False)
     entries = []
     for row in rows[:limit]:
         run = decode_run(row)
@@ -79,7 +79,8 @@ def console_data(store, selected="", *, full=True, page=1, started_from=None, st
     # behind a fixed number of recent runs or a per-run truncation.
     while include_events:
         recent = store.list_runs(15, offset=offset, processor=selected or None, exclude_import=True,
-            started_from=started_from, started_until=started_until, status=status, overlap=True)
+            started_from=started_from, started_until=started_until, status=status, overlap=True,
+            details=False, include_events=True, full_events=full)
         if not recent:
             break
         for row in recent:
@@ -109,7 +110,7 @@ def console_data(store, selected="", *, full=True, page=1, started_from=None, st
                 waiting=[dict(job=job, task=get_task(job['processor'])) for job in ready_jobs(store, exclude_running=True)
                          if not selected or job['processor'] == selected],
                 running=[dict(run=run, task=get_task(run['processor'])) for run in
-                         store.list_runs(20, processor=selected or None, exclude_import=True) if run['status'] == 'running'],
+                         store.list_runs(20, processor=selected or None, exclude_import=True, details=False) if run['status'] == 'running'],
                 online=time.time() - store.get_state('executor_heartbeat', 0) < 300,
                 tasks=[task for task in TASKS if task.enabled])
 

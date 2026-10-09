@@ -22,6 +22,7 @@ class Settings:
     poll_seconds: int = 300
     edit_interval: int = 10
     month_end_time: str = "23:30"
+    log_retention_days: int = 90
     wiki_write: bool = False
     bot_username: str = ""
     bot_login: str = ""
@@ -47,6 +48,8 @@ class Settings:
         result = cls(**values)
         if result.quiet_minutes < 1 or result.poll_seconds < 1:
             raise ValueError("Intervals must be positive")
+        if not 1 <= result.log_retention_days <= 3650:
+            raise ValueError("LOG_RETENTION_DAYS must be between 1 and 3650")
         if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", result.start_month):
             raise ValueError("START_MONTH must be YYYY-MM")
         if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", result.month_end_time):
