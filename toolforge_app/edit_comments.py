@@ -113,10 +113,8 @@ def rq_comment(changes):
 def unwrap_comment(changes):
     parts = []
     for row in changes:
-        date = f"; дата {row['date']} сохранена" if row.get('date') else ''
-        section = ' ' + section_description(row) if row.get('section') else ''
-        parts.append(template_link(row['previous']) + ' убран, т.к. осталась одна проблема: ' +
-                     template_link(row['template']) + section + ' (параметры сохранены' + date + ')')
+        parts.append(template_link(row['previous']) + ' убран, т.к. осталась одна проблема (' +
+                     template_link(row['template']) + ')')
     return '. '.join(dict.fromkeys(parts))
 
 

@@ -37,7 +37,7 @@ def test_shared_editor_saves_both_obkat_timers_and_public_values(settings, store
     assert 'name="quiet_minutes"' not in html
     now = datetime(2026, 10, 6, tzinfo=settings.zone).timestamp()
     card = build_overview(settings, store, now)['cards'][0]
-    assert card['next_scheduled'] == month_end_deadline('2026-10', '22:15', settings.zone)
+    assert card['month_end'] == month_end_deadline('2026-10', '22:15', settings.zone)
 
 
 @pytest.mark.parametrize('values', [
@@ -182,7 +182,7 @@ def test_month_end_hot_time_changes_and_completion_guard(settings, store, wiki):
     worker.schedule_month_end(now + 5000)
     assert not store.queue()
     card = build_overview(settings, store, now)['cards'][0]
-    assert card['next_scheduled'] == month_end_deadline('2026-11', '23:45', settings.zone)
+    assert card['month_end'] == month_end_deadline('2026-11', '23:45', settings.zone)
 
 
 def test_retime_leaves_claimed_and_manual_jobs_unchanged(settings, store, wiki):

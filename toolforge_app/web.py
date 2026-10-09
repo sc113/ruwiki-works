@@ -32,6 +32,7 @@ from .connections import (ERRORS as CONNECTION_ERRORS, FIELDS as CONNECTION_FIEL
 from .wiki import WikiError
 from .runtime import execution_settings, service_enabled, writes_enabled
 from .run_status import STATUS_LABELS
+from .statistics import statistics
 
 KIND_LABELS = {"page": "После правки", "full": "Ручной запуск", "month_end": "Конец месяца",
                "import": "Локальный снимок", "bootstrap": "Первичная синхронизация", "daily": "По расписанию",
@@ -62,7 +63,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
 
     def preview_return():
         target = request.form.get("next", "/")
-        if "\\" in target or not (target == "/" or target.startswith(("/?", "/processors/", "/runs", "/journal", "/launches/", "/console", "/notifications", "/admin"))):
+        if "\\" in target or not (target == "/" or target.startswith(("/?", "/processors/", "/runs", "/journal", "/launches/", "/console", "/statistics", "/notifications", "/admin"))):
             abort(400)
         return target
 
@@ -212,6 +213,23 @@ def create_app(settings=None, store=None, *, admin_preview=False):
     @app.route("/runs/recent-fragment")
     def recent_runs_fragment():
         return render_template("recent_runs.html", recent=run_history(store, limit=8))
+
+    @app.route('/statistics')
+    def statistics_page():
+        month = request.args.get('month', '')
+        view = request.args.get('view', 'days')
+        if view not in {'days', 'months'}:
+            abort(400)
+        try:
+            if month:
+                parsed = datetime.strptime(month, '%Y-%m')
+                if parsed.strftime('%Y-%m') != month or not 2001 <= parsed.year <= datetime.now(settings.zone).year or month > datetime.now(settings.zone).strftime('%Y-%m'):
+                    raise ValueError()
+            data = statistics(store, settings.zone, month or None)
+        except ValueError:
+            abort(400)
+        return render_template('statistics.html', module=Processor('statistics', 'Статистика', 'Статистика', '', True),
+                               stats=data, view=view)
 
     @app.route("/tasks/overview-fragment")
     def overview_fragment():

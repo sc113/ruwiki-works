@@ -245,7 +245,7 @@ def test_remaining_articles_are_manual_issues_and_wait_until_next_daily_run(sett
     wiki = MaintenanceWiki(['Текст', '{{Rq|check}}'] if slug == RQ else None, remains=True)
     worker = MaintenanceWorker(settings, store, slug, wiki)
     worker.execute(queued(store, slug))
-    assert store.list_runs(processor=slug)[0]['status'] == 'issues'
+    assert store.list_runs(processor=slug)[0]['status'] == 'success'
     assert report(store, slug)['problems'] == 1
     worker.tick()
     assert len(store.list_runs(processor=slug)) == 1
@@ -294,7 +294,7 @@ def test_dry_run_records_only_unprocessable_articles_as_manual_issues(settings, 
     configure(store, slug)
     MaintenanceWorker(settings, store, slug, MaintenanceWiki([text])).execute(queued(store, slug))
     run = store.list_runs(processor=slug)[0]
-    assert run['dry_run'] and run['status'] == 'issues'
+    assert run['dry_run'] and run['status'] == 'success'
     assert report(store, slug)['problems'] == 1
     assert json.loads(run['summary'])['errors'] == 0
     client = create_app(settings, store).test_client()
@@ -340,7 +340,7 @@ def test_dry_run_reports_a_missing_date_even_when_another_template_can_be_update
                         dict(date='2020-01-01', revision=1) if 'Проверить факты' in aliases else None)
     MaintenanceWorker(settings, store, DATES, wiki).execute(queued(store, DATES))
     run = store.list_runs(processor=DATES)[0]
-    assert run['status'] == 'issues' and json.loads(run['summary'])['proposed'] == 1
+    assert run['status'] == 'success' and json.loads(run['summary'])['proposed'] == 1
     assert report(store, DATES)['problems'] == 1
     assert 'Нет источников' in report(store, DATES)['manual'][0]['reason']
     assert not wiki.edits

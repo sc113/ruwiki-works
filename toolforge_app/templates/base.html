@@ -28,6 +28,7 @@
       <option value="{{ url_for('index') }}" {% if module.slug == 'overview' and request.endpoint != 'notifications_page' %}selected{% endif %}>Обзор</option>
       {% for p in processors %}<option value="{{ url_for('processor', slug=p.slug) }}" {% if p.slug == module.slug %}selected{% endif %}>{{ p.title }}</option>{% endfor %}
       <option value="{{ url_for('run_history_page') }}" {% if module.slug == 'activity' %}selected{% endif %}>Выполнение и логи</option>
+      <option value="{{ url_for('statistics_page') }}" {% if module.slug == 'statistics' %}selected{% endif %}>Статистика</option>
       {% if is_admin %}<option value="{{ url_for('notifications_page') }}" {% if request.endpoint == 'notifications_page' %}selected{% endif %}>Уведомления</option>{% endif %}
     </select></label>
   </aside>
@@ -36,6 +37,7 @@
       <div class="breadcrumb">Задачи бота <span>/</span> <strong>{{ module.short_title }}</strong></div>
       <div class="account">
       <a class="console-link {% if module.slug == 'activity' %}current{% endif %}" href="{{ url_for('run_history_page') }}" {% if module.slug == 'activity' %}aria-current="page"{% endif %}>{{ icon('console') }}Выполнение и логи</a>
+      <a class="console-link {% if module.slug == 'statistics' %}current{% endif %}" href="{{ url_for('statistics_page') }}" {% if module.slug == 'statistics' %}aria-current="page"{% endif %}>{{ icon('statistics') }}Статистика</a>
       {% if is_admin %}
       <details class="profile-menu"><summary {% if preview_admin %}title="Предпросмотр admin"{% endif %}><span class="avatar">{{ username[0] }}</span><span>{{ username }}<small>{{ 'Только просмотр' if preview_admin else 'Администратор' }}</small></span>{{ icon('chevron') }}</summary>
         <div class="profile-options"><a href="{{ url_for('profile_page') }}">{{ icon('settings') }}Настройки профиля</a><a href="{{ url_for('notifications_page') }}">{{ icon('bell') }}Уведомления</a>

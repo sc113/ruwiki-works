@@ -35,6 +35,16 @@ def test_service_health_incident_is_deduplicated_readable_and_recurs(settings, s
     assert len(store.list_notifications()) == 2 and store.unread_notifications() == 1
 
 
+def test_old_backlog_notifications_are_retired_without_discarding_failures(settings, store):
+    prime(store, 10000)
+    store.sync_notifications({'run:maintenance-rq': dict(title='Замена параметров RQ: осталось проблем',
+        message='Ручные исправления', target='/runs')}, 9999)
+    system_status(settings, store, 10001)
+    row = store.list_notifications()[0]
+    assert row['resolved_at'] == 10001 and row['read_at'] == 10001
+    assert store.unread_notifications() == 0
+
+
 def test_paused_and_stopped_service_are_distinct_from_process_failure(settings, store):
     prime(store, 10000)
     for task in TASKS:

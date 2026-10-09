@@ -2,11 +2,12 @@
 {% if entries %}
 <div class="runs-table-wrap" tabindex="0" role="region" aria-label="Таблица запусков задач">
 <table class="runs-table" role="table">
-  <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Запуск · МСК</th><th role="columnheader" scope="col">Задача</th><th role="columnheader" scope="col">Состояние</th><th role="columnheader" scope="col">Результат</th></tr></thead>
-  <tbody role="rowgroup">{% for entry in entries %}<tr role="row">
-    <td role="cell"><a class="run-time" title="{{ kind_labels.get(entry.run.kind, entry.run.kind) }}" href="{{ url_for('run_detail', run_id=entry.run.id) }}"><time>{{ entry.run.started_at|localtime('%d.%m.%Y') }}<span>{{ entry.run.started_at|localtime('%H:%M:%S') }}</span></time></a></td>
-    <td role="cell"><a class="run-task" title="{{ entry.module.title if entry.module else entry.run.processor }} · {{ kind_labels.get(entry.run.kind, entry.run.kind) }}" href="{{ url_for('run_detail', run_id=entry.run.id) }}">{{ icon(entry.task.slug if entry.task else 'history') }}<span>{% if entry.module and entry.module.slug == 'translations' %}<span class="run-module">Переводы · </span>{% endif %}{{ entry.task.title if entry.task else entry.run.processor }}</span></a></td>
-    <td role="cell"><span class="badge {{ entry.run.status }}">{{ status_labels.get(entry.run.status, entry.run.status) }}{% if entry.run.dry_run %}<span class="run-mode" title="Без сохранения правок" aria-label="Без сохранения правок">◇</span>{% endif %}</span><span class="run-secondary run-duration" title="Длительность">{{ entry.run|duration }}</span></td>
+  <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Время · МСК</th><th role="columnheader" scope="col">Задача</th><th role="columnheader" scope="col">Длительность</th><th role="columnheader" scope="col">Состояние</th><th role="columnheader" scope="col">Результат</th></tr></thead>
+  <tbody role="rowgroup">{% set dates = namespace(previous='') %}{% for entry in entries %}{% set date = entry.run.started_at|localtime('%d.%m.%Y') %}{% if dates.previous != date %}<tr class="run-date-group"><th colspan="5" scope="rowgroup">{{ date }}</th></tr>{% set dates.previous = date %}{% endif %}<tr role="row">
+    <td role="cell"><a class="run-time" title="{{ date }} · {{ kind_labels.get(entry.run.kind, entry.run.kind) }}" href="{{ url_for('run_detail', run_id=entry.run.id) }}"><time>{{ entry.run.started_at|localtime('%H:%M:%S') }}</time></a></td>
+    <td role="cell"><a class="run-task" title="{{ kind_labels.get(entry.run.kind, entry.run.kind) }}" href="{{ url_for('run_detail', run_id=entry.run.id) }}"><span class="run-task-symbol">{{ icon(entry.task.slug if entry.task else 'history') }}</span><span><span class="run-module">{{ entry.module.short_title if entry.module else entry.run.processor }}</span>{{ 'Расстановка дат' if entry.task and entry.task.slug == 'maintenance-dates' else entry.task.title if entry.task else entry.run.processor }}</span></a></td>
+    <td role="cell"><span class="run-duration" title="Длительность">{{ entry.run|duration }}</span></td>
+    <td role="cell"><span class="badge {{ entry.run.status }}">{{ status_labels.get(entry.run.status, entry.run.status) }}{% if entry.run.dry_run %}<span class="run-mode" title="Без сохранения правок" aria-label="Без сохранения правок">◇</span>{% endif %}</span></td>
     <td role="cell">{% with metrics=entry.metrics %}{% include 'run_metrics.html' %}{% endwith %}</td>
   </tr>{% endfor %}</tbody>
 </table>

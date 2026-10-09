@@ -48,6 +48,12 @@
   <path d="M8 5v14M16 5v14"/>
   {% elif name in ['resume', 'play'] %}
   <path d="m7 4 14 8-14 8V4Z"/>
+  {% elif name == 'instant' %}
+  <path d="m13 2-9 12h7l-1 8 10-13h-7l1-7Z"/>
+  {% elif name == 'warning' %}
+  <path d="m12 3 10 18H2L12 3ZM12 9v5M12 17h.01"/>
+  {% elif name == 'statistics' %}
+  <path d="M4 3v18h17M8 16v-5M13 16V6M18 16v-8"/>
   {% elif name == 'stop' %}
   <rect x="5" y="5" width="14" height="14" rx="1.5"/>
   {% elif name == 'restart' %}

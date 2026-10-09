@@ -1754,22 +1754,26 @@ select {
 .task-group-heading h2 a { display: flex; align-items: center; gap: 12px; color: var(--text); }
 .task-group-heading h2 .icon { color: var(--accent); width: 22px; height: 22px; }
 .task-group-heading > span { font-size: 15px; white-space: nowrap; }
-.action-row { display: grid; grid-template-columns: minmax(270px, 1.8fr) minmax(135px, 1fr) minmax(125px, .9fr) minmax(145px, 1fr) var(--action-counts-width) var(--action-buttons-width); grid-template-areas: "title status last next counts buttons"; align-items: center; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--line); min-height: 74px; }
+.action-row { display: grid; grid-template-columns: minmax(250px, 1.6fr) minmax(200px, 1fr) minmax(185px, 1fr) var(--action-counts-width) var(--action-buttons-width); grid-template-areas: "title schedule timing counts buttons"; align-items: center; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--line); min-height: 74px; }
 .action-row:hover { background: #132034; }
 .action-subject { grid-area: title; min-width: 0; }
 .action-title { font-size: 16px; line-height: 1.45; font-weight: 600; }
 .action-title a { display: flex; gap: 12px; align-items: center; color: var(--text); }
 .action-title .icon { color: var(--accent); }
 .action-description { margin: 4px 0 0 36px; color: var(--muted); font-size: 15px; line-height: 1.45; }
-.action-state { grid-area: status; }
+.action-state { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 0 36px; }
 .action-state .badge { font-size: 15px; line-height: 1.4; }
-.action-last { grid-area: last; }
-.action-next { grid-area: next; }
-.action-last, .action-next { font-size: 15px; font-variant-numeric: tabular-nums; }
-.action-last a { color: var(--body); }
-.action-row .task-field-label { display: block; font-size: 14px; margin-bottom: 2px; }
+ .action-schedule { grid-area: schedule; font-size: 15px; min-width: 0; }
+.action-timing { grid-area: timing; font-variant-numeric: tabular-nums; }
+.schedule-primary { display: block; color: var(--body); font-weight: 500; }
+.action-last, .action-last a { font-size: 14px; color: var(--muted); }
+.action-next { margin-top: 9px; font-size: 17px; color: var(--text); font-weight: 600; }
+.action-row .task-field-label { display: block; color: var(--muted); font-weight: 400; font-size: 14px; margin-bottom: 2px; }
 .date-value { display: block; white-space: nowrap; }
 .countdown { display: block; color: var(--accent-dark); font-size: 15px; font-weight: 500; }
+.monthly-schedule { margin-top: 6px; color: var(--muted); font-size: 14px; }
+.monthly-schedule summary { cursor: pointer; }
+.monthly-schedule > span { display: block; margin: 4px 0 0 12px; }
 .action-counts { grid-area: counts; display: flex; flex-direction: column; gap: 2px; align-items: center; min-width: 0; }
 .metric-link { display: inline-flex; align-items: baseline; justify-content: center; gap: 7px; font-size: 14px; padding: 2px 7px; border: 1px solid transparent; border-radius: 4px; color: var(--accent); white-space: nowrap; }
 .metric-link strong { flex: none; text-align: right; font-variant-numeric: tabular-nums; font-size: 19px; font-weight: 650; }
@@ -1782,7 +1786,7 @@ select {
 .icon-button .icon { width: 17px; height: 17px; }
 .action-buttons .task-open { width: 32px; min-height: 32px; }
 .action-row.unconnected { min-height: 54px; grid-template-columns: minmax(0, 1.8fr) minmax(135px, 1fr) 32px; grid-template-areas: "title status buttons"; }
-.action-row.unconnected .action-last, .action-row.unconnected .action-next, .action-row.unconnected .action-counts { display: none; }
+.action-row.unconnected .action-schedule, .action-row.unconnected .action-timing, .action-row.unconnected .action-counts { display: none; }
 .action-tabs { display: flex; overflow-x: auto; gap: 6px; padding: 5px; margin-bottom: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
 .action-tabs a { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 10px; padding: 9px 14px; border: 1px solid transparent; border-radius: 5px; color: var(--muted); white-space: nowrap; font-weight: 500; }
 .action-tabs a.active { color: var(--accent-dark); background: var(--accent-pale); border-color: #395e8e; }
@@ -1886,7 +1890,7 @@ select {
 .runs-table { width: 100%; min-width: 640px; border-collapse: collapse; text-align: left; font-size: 15px; }
 .runs-table th { padding: 10px 12px; background: #162234; color: var(--muted); font-weight: 500; white-space: nowrap; }
 .runs-table td { padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: middle; }
-.runs-table td:first-child { min-width: 110px; font-variant-numeric: tabular-nums; }
+.runs-table td:first-child { min-width: 88px; font-variant-numeric: tabular-nums; }
 .runs-table td:nth-child(2) { min-width: 150px; }
 .runs-table td:last-child { min-width: 180px; }
 .runs-table tbody tr:hover { background: #132034; }
@@ -1894,10 +1898,16 @@ select {
 .run-secondary { display: block; margin-top: 3px; color: var(--muted); font-size: 14px; }
 .run-time time > span { display: block; color: var(--muted); }
 .run-task { display: flex; align-items: flex-start; gap: 7px; color: var(--text); font-size: 15px; font-weight: 500; }
-.run-task .icon { width: 17px; height: 17px; margin-top: 3px; color: var(--accent); flex-shrink: 0; }
-.run-module, .run-mode { color: var(--muted); }
+.run-task-symbol { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 30px; height: 30px; background: #172941; border: 1px solid #2b4666; border-radius: 5px; }
+.run-task .icon { width: 18px; height: 18px; color: var(--accent); }
+.run-module { display: block; color: var(--muted); font-size: 14px; line-height: 1.25; font-weight: 400; margin-bottom: 2px; }
+.run-mode { color: var(--muted); }
+.runs-table .run-date-group th { padding: 5px 12px; background: #111c2b; color: var(--accent-dark); font-size: 14px; font-weight: 500; border-top: 1px solid var(--line); }
+.runs-table .run-count { padding: 2px 6px; background: #172234; border-radius: 4px; }
+.run-count .icon { width: 15px; height: 15px; margin-right: 4px; vertical-align: -2px; color: var(--amber); }
+.metric-link .icon { width: 17px; height: 17px; align-self: center; }
 .runs-table .badge { white-space: nowrap; }
-.runs-table .run-counts { gap: 2px 12px; }
+.runs-table .run-counts { gap: 4px 8px; }
 .runs-table .run-count strong { font-size: 15px; }
 .run-duration { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--body); }
 .run-counts { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; font-size: 15px; }
@@ -1926,13 +1936,15 @@ select {
   .runs-table { display: block; min-width: 0; }
   .runs-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .runs-table tbody { display: block; }
-  .runs-table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "task status" "time status" "metrics metrics"; gap: 5px 12px; padding: 10px; border-top: 1px solid var(--line); }
+  .runs-table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "task status" "time duration" "metrics metrics"; gap: 5px 12px; padding: 10px; border-top: 1px solid var(--line); }
   .runs-table tbody tr:first-child { border-top: 0; }
   .runs-table td { display: block; min-width: 0 !important; padding: 0; border-top: 0; }
   .runs-table td:nth-child(1) { grid-area: time; }
   .runs-table td:nth-child(2) { grid-area: task; }
-  .runs-table td:nth-child(3) { grid-area: status; justify-self: end; }
-  .runs-table td:nth-child(4) { grid-area: metrics; padding-top: 2px; }
+  .runs-table td:nth-child(3) { grid-area: duration; justify-self: end; font-size: 14px; }
+  .runs-table td:nth-child(4) { grid-area: status; justify-self: end; }
+  .runs-table td:nth-child(5) { grid-area: metrics; padding-top: 2px; }
+  .runs-table tbody tr.run-date-group { display: block; padding: 0; }
   .run-time time > span { display: inline; margin-left: 6px; }
 }
 .console-toolbar { display: flex; align-items: center; gap: 14px 24px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -1995,18 +2007,18 @@ select {
 }
 @media (prefers-reduced-motion: reduce) { .badge.running::before, .running-indicator { animation: none; } }
 @container (max-width: 1100px) {
-  .action-row { grid-template-columns: minmax(170px, 1.2fr) minmax(130px, 1fr) minmax(130px, 1fr) var(--action-counts-width) var(--action-buttons-width); grid-template-areas: "title title title counts buttons" "status last next counts buttons"; }
+  .action-row { grid-template-columns: minmax(200px, 1fr) minmax(185px, 1fr) var(--action-counts-width) var(--action-buttons-width); grid-template-areas: "title title counts buttons" "schedule timing counts buttons"; }
   .action-row.unconnected { grid-template-columns: minmax(0, 1fr) 170px 32px; grid-template-areas: "title status buttons"; }
 }
 @container (max-width: 900px) {
-  .action-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--action-counts-width) var(--action-buttons-width); grid-template-areas: "title title status status" "last next counts buttons"; }
+  .action-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--action-counts-width) var(--action-buttons-width); grid-template-areas: "title title title buttons" "schedule timing counts counts"; }
   .action-row.unconnected { grid-template-columns: minmax(0, 1fr) 150px 32px; grid-template-areas: "title status buttons"; }
 }
 @container (max-width: 620px) {
-  .action-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "title title" "status status" "last next" "counts counts" "buttons buttons"; gap: 8px 12px; }
-  .task-groups:not(.has-admin-controls) .action-row:not(.unconnected) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; grid-template-areas: "title title title" "status status status" "last next next" "counts counts buttons"; }
+  .action-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "title title" "schedule timing" "counts counts" "buttons buttons"; gap: 8px 12px; }
+  .task-groups:not(.has-admin-controls) .action-row:not(.unconnected) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; grid-template-areas: "title title title" "schedule timing timing" "counts counts buttons"; }
   .action-row.unconnected { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title title" "status buttons"; }
-  .action-counts { align-self: end; }
+  .action-counts { align-self: center; flex-direction: row; justify-content: center; flex-wrap: wrap; }
   .action-title { font-size: 17px; }
 }
 @media (max-width: 850px) {
@@ -2153,3 +2165,24 @@ select {
   .account { flex-wrap: wrap; }
 }
 .search-timing.search-online { color: var(--green); }
+
+.statistics-filter { display: flex; align-items: end; gap: 12px; margin-bottom: 22px; }
+.statistics-filter label { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.statistics-filter input { color-scheme: dark; border: 1px solid var(--line); border-radius: 5px; padding: 7px 10px; background: var(--surface); color: var(--text); min-height: 40px; font: inherit; }
+.statistics-totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 24px; padding: 16px 0; border-block: 1px solid var(--line); gap: 16px; }
+.statistics-totals dt { font-size: 15px; color: var(--muted); }
+.statistics-totals dd { margin: 4px 0 0; font-size: 28px; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
+.statistics-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+.statistics-table { width: 100%; border-collapse: collapse; text-align: right; font-size: 15px; font-variant-numeric: tabular-nums; }
+.statistics-table th, .statistics-table td { padding: 10px 14px; border-top: 1px solid var(--line); white-space: nowrap; }
+.statistics-table thead th { background: #162234; color: var(--muted); font-weight: 400; border-top: 0; }
+.statistics-table th:first-child { text-align: left; font-weight: 500; }
+.statistics-table tbody tr { background: var(--surface); }
+.statistics-table tbody tr:hover { background: #132034; }
+.statistics-empty td { color: var(--muted); }
+.statistics-error { color: var(--red); }
+.statistics-by-task { margin-top: 30px; }
+@media (max-width: 650px) {
+  .statistics-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .statistics-table th, .statistics-table td { padding: 8px 10px; }
+}

@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from toolforge_app.edit_comments import dates_comment, fit_comment, rq_comment, translation_comment
+from toolforge_app.edit_comments import dates_comment, fit_comment, rq_comment, translation_comment, unwrap_comment
 from toolforge_app.processors.maintenance.service import MaintenanceWorker
 from toolforge_app.processors.translations.service import TranslationWorker
 from toolforge_app.processors.sections.service import SectionWorker
@@ -21,6 +21,11 @@ def test_date_comment_matches_complete_template_and_redirect_descriptions():
     assert dates_comment([row]) == 'В [[ш:Проверить факты]] добавлена дата установки: [[Special:Diff/123|2020-01-02]]'
     row['previous'] = 'Факты'
     assert dates_comment([row]) == 'Замена редиректа [[ш:Факты]] на актуальный [[ш:Проверить факты]] с добавлением даты установки: [[Special:Diff/123|2020-01-02]]'
+
+
+def test_unwrap_comment_uses_the_exact_short_format_with_actual_template_links():
+    assert unwrap_comment([dict(previous='Рк', template='Source', date='2010-10-10', section='История')]) == (
+        '[[ш:Рк]] убран, т.к. осталась одна проблема ([[ш:Source]])')
 
 
 def test_date_comment_groups_sections_and_retains_their_original_names():

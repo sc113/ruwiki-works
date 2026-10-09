@@ -190,6 +190,11 @@ class Store:
     def sync_notifications(self, conditions, now):
         """One notification per incident; recurrence creates a new unread entry."""
         with self.observation_transaction() as conn:
+            # Retire the former informational backlog alerts, including archived
+            # unread entries. Execution failures retain their incident history.
+            conn.execute(update(notifications).where(
+                notifications.c.title.like('%: осталось проблем'),
+                notifications.c.read_at.is_(None)).values(read_at=now))
             active = {r['active_key']: dict(r) for r in conn.execute(select(notifications).where(
                 notifications.c.active_key.is_not(None)).with_for_update()).mappings()}
             for key, value in conditions.items():
@@ -562,6 +567,24 @@ class Store:
         with self.engine.connect() as conn:
             row = conn.execute(select(runs).where(runs.c.id == run_id)).mappings().first()
             return normalize_run(row) if row else None
+
+    def statistics_runs(self, start, end):
+        """Stream a bounded period without reports, wiki text or credentials."""
+        statement = select(runs.c.id, runs.c.processor, runs.c.started_at,
+            runs.c.dry_run, runs.c.summary, runs.c.events,
+            status_expression(runs).label('status')).where(
+                runs.c.kind != 'import', runs.c.started_at < end,
+                or_(runs.c.finished_at >= start, runs.c.started_at >= start,
+                    runs.c.status == 'running')).order_by(runs.c.started_at, runs.c.id)
+        with self.engine.connect() as conn:
+            result = conn.execution_options(stream_results=True).execute(statement).mappings()
+            for row in result:
+                yield dict(row)
+
+    def statistics_since(self):
+        from sqlalchemy import func
+        with self.engine.connect() as conn:
+            return conn.execute(select(func.min(runs.c.started_at)).where(runs.c.kind != 'import')).scalar()
 
     def lease_active(self, processor, now=None):
         with self.engine.connect() as conn:

@@ -67,8 +67,8 @@ def build_overview(settings, store, now=None):
         failed = latest and latest["status"] == "failed" and not (
             control.get("action") == "restart" and latest["started_at"] < control["at"])
         status = (mode if mode != "active" else "running" if running else "queued" if position
-                  else "error" if error or failed else "issues" if latest and latest['status'] == 'issues'
-                  else "scheduled" if pending else
+                  else "error" if error or failed else "scheduled" if pending or (
+                      maintenance and (online or latest and latest['status'] == 'success')) else
                   "success" if latest and latest["status"] == "success" else "waiting" if online else "offline")
         if mode == 'active' and not running and not position and not service_enabled(store, 'executor'):
             status = 'paused'
@@ -76,7 +76,6 @@ def build_overview(settings, store, now=None):
                   "stopped": "Остановка запрошена" if running else "Остановлена",
                   "error": "Ошибка", "running": "В работе", "scheduled": "Запланирована",
                   "queued": "Ожидает очереди",
-                  "issues": "Осталось проблем",
                   "success": "Выполнена",
                   "waiting": "Ожидает запуска", "offline": "Ожидает запуска"}
         if mode == 'active' and not running and not position and not service_enabled(store, 'executor'):
@@ -101,7 +100,7 @@ def build_overview(settings, store, now=None):
             "search_status": search_status, "search_online": search_online,
             "automatic_enabled": service_enabled(store, 'executor'),
             "manual_next": bool(next_job and store.run_request(job_key=next_job['key'])),
-            "next_scheduled": next_daily_time(schedule["run_time"], now) if maintenance else next_month_end(settings, now, store),
+            "next_scheduled": next_daily_time(schedule["run_time"], now) if maintenance else None,
             "run_time": config["run_time"] if maintenance else None,
             "dry_run": bool(latest['dry_run']) if running else (
                 not (settings.wiki_write and config["autosave"]) if maintenance else not settings.wiki_write),
