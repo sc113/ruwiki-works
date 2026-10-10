@@ -53,6 +53,17 @@ def is_service_header(title):
     return any(re.search(p, clean) for p in SERVICE_PATTERNS)
 
 
+def nomination_categories(title):
+    """Category subjects, excluding the destination of a simple rename."""
+    category_pattern = re.compile(r'\[\[:Категория:([^\]|]+)(?:\|[^\]]*)?\]\]')
+    # Arrows inside a category name or a link label do not mark a rename.
+    outside_links = re.sub(r'\[\[[^\]]*\]\]', lambda match: ' ' * len(match[0]), title)
+    arrows = list(re.finditer(r'→|⇒|->|&rarr;|&#(?:8594|x2192);', outside_links, re.I))
+    # Keep complex headings conservative when their grouping is ambiguous.
+    end = arrows[0].start() if len(arrows) == 1 else len(title)
+    return {match[1].strip().lower() for match in category_pattern.finditer(title) if match.start() < end}
+
+
 def analyze_text(content):
     lines = content.split('\n')
 
@@ -227,13 +238,10 @@ def analyze_text(content):
                     })
 
     # ПРОВЕРКА: Дублирующиеся номинации (одна категория обсуждается несколько раз)
-    category_pattern = re.compile(r'\[\[:Категория:([^\]|]+)')
     nominations_by_cat = defaultdict(list)
     for idx, (level, line_num, title, is_struck) in enumerate(all_headers):
         if level == 3 and not is_date_header(title) and not is_service_header(title) and not is_any_itog_header(title):
-            # Извлекаем названия категорий из заголовка (только уникальные)
-            cats = set(c.strip().lower()
-                       for c in category_pattern.findall(title))
+            cats = nomination_categories(title)
             for cat in cats:
                 nominations_by_cat[cat].append(
                     (line_num, title, is_struck))
@@ -260,8 +268,7 @@ def analyze_text(content):
         if level == 2 and is_date_header(title):
             current_date_line = line_num
         elif level == 3 and current_date_line and not is_service_header(title) and not is_any_itog_header(title):
-            cats = set(c.strip().lower()
-                       for c in category_pattern.findall(title))
+            cats = nomination_categories(title)
             for cat in cats:
                 nominations_by_date[(current_date_line, cat)].append(
                     (line_num, title, is_struck))

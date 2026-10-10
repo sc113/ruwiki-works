@@ -1,3 +1,5 @@
+import pytest
+
 from toolforge_app.processors.obkat.analyzer import analyze_text
 from toolforge_app.processors.obkat.formatter import format_text
 from toolforge_app.processors.obkat.report import build_report, open_nominations, page_title, title_month
@@ -61,3 +63,54 @@ def test_open_list_merges_partial_findings_for_the_same_nomination():
     assert len(opened) == 1
     assert opened[0]["partial"] and opened[0]["type"] == "sub_itog_no_main"
     assert opened[0]["with_itog"] == 1 and opened[0]["open_subs"] == 1
+
+
+def duplicate_findings(*titles):
+    text = '== 11 июня 2020 ==\n' + ''.join(
+        f'=== {title} ===\nОбоснование номинации.\n' for title in titles)
+    return [issue for issue in analyze_text(text)
+            if issue['type'] in {'duplicate_nomination', 'same_day_duplicate'}]
+
+
+@pytest.mark.parametrize('closed', [False, True])
+def test_rename_destination_can_be_another_nominations_subject(closed):
+    titles = [
+        '[[:Категория:Игроки ФК «Энергия» Воронеж (муж.)]] → [[:Категория:Игроки ФК «Энергия» Воронеж]]',
+        '[[:Категория:Игроки ФК «Энергия» Воронеж]] → [[:Категория:Игроки ЖФК «Энергия» Воронеж]]',
+    ]
+    if closed:
+        titles = [f'<s>{title}</s>' for title in titles]
+    assert duplicate_findings(*titles) == []
+
+
+def test_different_categories_can_be_renamed_to_the_same_destination():
+    assert duplicate_findings('[[:Категория:А]] → [[:Категория:Общая]]',
+                              '[[:Категория:Б]] → [[:Категория:Общая]]') == []
+
+
+@pytest.mark.parametrize('arrow', ['→', '⇒', '->', '&rarr;', '&#8594;'])
+def test_repeated_rename_subject_is_still_a_duplicate(arrow):
+    findings = duplicate_findings(f'[[:Категория:А]] {arrow} [[:Категория:Б]]',
+                                 f'[[:Категория:А]] {arrow} [[:Категория:В]]')
+    assert {issue['type'] for issue in findings} == {'duplicate_nomination', 'same_day_duplicate'}
+    assert all(issue['line'] == 4 and issue['first_line'] == 2 for issue in findings)
+
+
+def test_grouped_nominations_keep_every_source_category():
+    findings = duplicate_findings('[[:Категория:А]] и [[:Категория:Б]] → [[:Категория:Общая]]',
+                                 '[[:Категория:Б]] и [[:Категория:В]]')
+    assert {issue['type'] for issue in findings} == {'duplicate_nomination', 'same_day_duplicate'}
+    assert duplicate_findings('[[:Категория:А]] и [[:Категория:Б]]',
+                              '[[:Категория:Общая]]') == []
+
+
+def test_arrow_in_category_link_does_not_hide_its_subject():
+    findings = duplicate_findings('[[:Категория:А → Б|Название → подпись]] → [[:Категория:В]]',
+                                 '[[:Категория:А → Б]]')
+    assert {issue['type'] for issue in findings} == {'duplicate_nomination', 'same_day_duplicate'}
+
+
+def test_complex_rename_headings_keep_duplicate_checks():
+    findings = duplicate_findings('[[:Категория:А]] → [[:Категория:Б]]; [[:Категория:В]] → [[:Категория:Г]]',
+                                 '[[:Категория:В]]')
+    assert {issue['type'] for issue in findings} == {'duplicate_nomination', 'same_day_duplicate'}
