@@ -10,9 +10,21 @@ from ..maintenance.history import normalize
 
 def original_title(value):
     value = ' '.join(value.strip().replace('_', ' ').split())
-    if not value or len(value) > 255 or any(c in value for c in '|{}[]<>\x00\r\n'):
+    if (not value or len(value) > 255 or any(c in value for c in '|{}[]<>\x00\r\n')
+            or re.match(r'(?:special\s*:|https?://|//)', value, re.I)):
         raise WikiError('invalid-original')
     return value
+
+
+def linked_title(target, label=None):
+    # Content Translation links to the source revision, with the article title
+    # as its label. The revision address is never an original article title.
+    if re.match(r'special\s*:', target.strip(), re.I):
+        if not re.fullmatch(r'Special:(?:Redirect/(?:revision|page)/\d+|PermanentLink/\d+|Diff/\d+(?:/\d+)?)',
+                            target.strip(), re.I) or not label:
+            raise WikiError('invalid-original')
+        return original_title(label)
+    return original_title(target)
 
 
 def source(lang, title, languages):
@@ -24,17 +36,19 @@ def source(lang, title, languages):
 
 def parse_creation_comment(comment, languages):
     found = set()
-    # Link targets identify the original; a displayed label may be translated.
-    for match in re.finditer(r'\[\[:?([a-z][a-z0-9-]*):([^\]|]+)(?:\|[^\]]*)?\]\]', comment, re.I):
+    # Normal article links use their target; revision links use the title label.
+    for match in re.finditer(r'\[\[:?([a-z][a-z0-9-]*):([^\]|]+)(?:\|([^\]]*))?\]\]', comment, re.I):
         if match[1].lower() in languages:
-            found.add(source(match[1], match[2].split('#', 1)[0], languages))
+            found.add(source(match[1], linked_title(match[2].split('#', 1)[0], match[3]), languages))
     for match in re.finditer(r'(?:https?:)?//([a-z][a-z0-9-]*)\.(?:m\.)?wikipedia\.org/[^\s\]|<>]+', comment, re.I):
         if match[1].lower() not in languages:
             continue
         url = urlsplit(match[0] if not match[0].startswith('//') else 'https:' + match[0])
         title = unquote(url.path[len('/wiki/'):]) if url.path.startswith('/wiki/') else parse_qs(url.query).get('title', [''])[0]
         if title:
-            found.add(source(match[1], title, languages))
+            label = re.match(r'(?:\|([^\]]*)\]\]|[ \t]+([^\]]*)\])', comment[match.end():])
+            label = (label[1] if label[1] is not None else label[2]) if label else None
+            found.add(source(match[1], linked_title(title, label), languages))
     if len(found) > 1:
         raise WikiError('ambiguous-source')
     if not found:

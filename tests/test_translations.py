@@ -93,6 +93,11 @@ def form_data(slug, **values):
     ('[https://en.wikipedia.org/w/index.php?title=Original_title&oldid=25 Источник]', ('en', 'Original title')),
     ('[[//en.wikipedia.org/wiki/Original_title#History|Источник]] [[:en:Original title]]', ('en', 'Original title')),
     ('https://be-tarask.wikipedia.org/wiki/%D0%9C%D1%96%D1%80', ('be-tarask', 'Мір')),
+    ('Создано переводом страницы «[[:en:Special:Redirect/revision/589912530|Balata]]»', ('en', 'Balata')),
+    ('[[:en:Special:PermanentLink/589912530|Balata]] [[:en:Balata]]', ('en', 'Balata')),
+    ('[[:en:Special:Diff/589912530|Balata]]', ('en', 'Balata')),
+    ('[[https://en.wikipedia.org/wiki/Special:Redirect/revision/589912530|Balata]]', ('en', 'Balata')),
+    ('[https://en.wikipedia.org/wiki/Special:PermanentLink/589912530 Balata]', ('en', 'Balata')),
 ])
 def test_creation_comment_extracts_target_not_link_label(comment, expected):
     assert parse_creation_comment(comment, LANGUAGES) == expected
@@ -101,7 +106,12 @@ def test_creation_comment_extracts_target_not_link_label(comment, expected):
 @pytest.mark.parametrize('comment,code', [('', 'creation-comment-empty'), ('Создана страница', 'comment-source-missing'),
     ('[[File:Image.jpg]] [[:ru:Пример]]', 'comment-source-missing'),
     ('[[:en:One]] [[:de:Two]]', 'ambiguous-source'),
-    ('[[:en:{{injection}}]]', 'invalid-original')])
+    ('[[:en:{{injection}}]]', 'invalid-original'),
+    ('[[:en:Special:Redirect/revision/589912530]]', 'invalid-original'),
+    ('https://en.wikipedia.org/wiki/Special:Diff/589912530', 'invalid-original'),
+    ('[[:en:Special:Random|Balata]]', 'invalid-original'),
+    ('[[:en:Special:Redirect/revision/589912530|Special:Diff/589912530]]', 'invalid-original'),
+    ('[[:en:Special:Redirect/revision/589912530|https://en.wikipedia.org/wiki/Balata]]', 'invalid-original')])
 def test_uncertain_creation_source_is_not_guessed(comment, code):
     with pytest.raises(WikiError, match=code):
         parse_creation_comment(comment, LANGUAGES)
@@ -111,6 +121,7 @@ def test_uncertain_creation_source_is_not_guessed(comment, code):
     ('{{Переведённая статья|en}}', 'talk-malformed'),
     ('{{Переведённая статья|ru|Пример}}', 'talk-malformed'),
     ('{{Переведённая статья|1=en|1=de|2=Example}}', 'talk-malformed'),
+    ('{{Переведённая статья|en|Special:Diff/589912530}}', 'talk-malformed'),
     ('{{Переведённая статья|en|One}}{{Переведённая статья|en|Two}}', 'ambiguous-source'),
     ('<!-- {{Переведённая статья|en|Example}} -->', 'talk-template-missing'),
 ])
@@ -162,6 +173,17 @@ def test_live_daily_pass_edits_article_only_and_projects_public_logs(settings, s
     admin = client.get('/runs/' + run['id'] + '/log.json').get_json()
     assert any('diff_before' in event for event in admin['events'])
     assert 'configuration' in str(admin)
+
+
+def test_creation_revision_link_saves_its_article_title_not_the_special_page(settings, store):
+    settings.wiki_write = True
+    wiki = TranslationWiki(comment='Создано переводом страницы «[[:en:Special:Redirect/revision/589912530|Balata]]»')
+    TranslationWorker(settings, store, CATS, wiki).execute(job(store, CATS))
+    assert len(wiki.edits) == 1
+    assert '|язык=en|оригинал=Balata|дата=2020-01-01' in wiki.data['Пример'].text
+    assert 'Special:Redirect' not in wiki.data['Пример'].text
+    assert '+оригинал=Balata' in wiki.edits[0][2]
+    assert store.list_runs(processor=CATS)[0]['status'] == 'success'
 
 
 def test_daily_dry_run_does_not_publish_unsaved_changes(settings, store):
