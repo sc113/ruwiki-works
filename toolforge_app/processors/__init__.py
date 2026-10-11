@@ -8,15 +8,33 @@ class Processor:
     short_title: str
     description: str
     enabled: bool = False
+    nav_title: str = ""
 
 
 PROCESSORS = (
-    Processor("obkat", "Обсуждение категорий", "ОБКАТ", "Структура обсуждений, итоги и открытые номинации", True),
+    Processor("obkat", "Обсуждение категорий", "ОБКАТ", "Структура обсуждений, итоги и открытые номинации", True, "Категории"),
     Processor("maintenance", "Шаблоны о проблемах", "Шаблоны", "Расстановка дат, замена параметров и разворачивание RQ", True),
     Processor("translations", "Плохие и грубые переводы", "Переводы", "Язык оригинала и данные о переводах", True),
     Processor("sections", "Шаблоны разделов", "Разделы", "Взаимная замена шаблонов по содержимому раздела", True),
     Processor("categories", "Категории обслуживания", "Категории", "Создание месячных категорий и проверка оформления", True),
-    Processor("projects", "Обсуждение проектов", "Проекты", "Завершённые обсуждения, навигация и оформление номинаций", True),
+    Processor("projects", "Обсуждение проектов", "Проекты", "Завершённые обсуждения, закрытые годы и оформление номинаций", True, "Проекты"),
+)
+
+
+@dataclass(frozen=True)
+class ProcessorGroup:
+    slug: str
+    title: str
+    processors: tuple[str, ...]
+
+    @property
+    def link_slug(self):
+        return self.processors[0] if len(self.processors) == 1 else None
+
+
+PROCESSOR_GROUPS = (
+    ProcessorGroup("discussions", "Обсуждения и номинации", ("obkat", "projects")),
+    *(ProcessorGroup(p.slug, p.title, (p.slug,)) for p in PROCESSORS if p.slug not in {"obkat", "projects"}),
 )
 
 
@@ -30,6 +48,7 @@ class Task:
     schedules: tuple[str, ...] = ()
     daily_time: str = "03:00"
     month_end_time: str = "23:30"
+    search_minutes: int = 360
 
 
 TASKS = (
@@ -43,7 +62,7 @@ TASKS = (
     Task("sections-fill-to-empty", "sections", "Дополнить раздел → Пустой раздел", "Меняет шаблон, если раздел и его подразделы не содержат текста.", True, ("daily",), "04:00"),
     Task("categories-create", "categories", "Создание категорий", "Создаёт непустые месячные категории по форматам из вики-таблицы.", True, ("daily",), "05:00"),
     Task("categories-format", "categories", "Проверка оформления", "Исправляет оформление новых категорий; в конце месяца проверяет все.", True, ("weekly", "month_end"), "05:00", "05:00"),
-    Task("projects", "projects", "Зачёркивание и навигация", "Зачёркивает завершённые обсуждения проектов и отмечает полностью закрытые страницы лет.", True, ("daily",), "06:00"),
+    Task("projects", "projects", "Зачёркивание и оформление", "Зачёркивает завершённые обсуждения проектов, выравнивает оформление и отмечает закрытые годы.", True, ("daily",), "06:00", search_minutes=720),
 )
 
 

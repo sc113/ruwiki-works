@@ -9,7 +9,7 @@ import pytest
 from toolforge_app.processors.projects import PREFIX
 from toolforge_app.processors.projects.config import defaults, parse_form
 from toolforge_app.processors.projects.inventory import discover, refresh, report
-from toolforge_app.processors.projects.rules import analyze, format_discussion, page_report
+from toolforge_app.processors.projects.rules import analyze, edit_comment, format_discussion, page_report
 from toolforge_app.processors.projects.service import ProjectMonitor, ProjectWorker
 from toolforge_app.schedules import get_schedule
 from toolforge_app.statistics import statistics
@@ -59,6 +59,19 @@ def test_partial_subnominations_and_conclusion_children():
     result, closed, _ = format_discussion(whole)
     assert closed and '=== <s>Второй</s> ===' in result
     assert '==== Дополнение к решению ====' in result
+
+
+def test_edit_comments_describe_only_actual_changes():
+    before = OPEN.replace('== [[Проект:Пример]] ==', '==[[Проект:Пример]]==').strip()
+    after = format_discussion(before, spacing=True)[0]
+    assert edit_comment(before, after) == 'форматирование заголовков и пустых строк'
+    after = format_discussion(CLOSED, spacing=True)[0]
+    comment = edit_comment(CLOSED, after)
+    assert 'зачёркивание завершённых обсуждений' in comment
+    assert 'отметка закрытого года в [[ш:ОБПРО-Навигация]]' in comment
+    assert 'обновление навигации' not in comment
+    bare = OPEN.replace('<noinclude>{{ОБПРО-Навигация}}</noinclude>', '{{ОБПРО-Навигация}}').strip()
+    assert edit_comment(bare, format_discussion(bare)[0]) == 'оформление [[ш:ОБПРО-Навигация]]'
 
 
 def test_existing_archive_marker_is_preserved_and_navigation_is_normalized():
@@ -164,6 +177,20 @@ def test_monitor_reads_only_new_revisions_and_tracks_actual_observations(setting
     monitor.tick(now=3000, force=True)
     assert len(wiki.content_reads) == 2 and report(store)['problems'] == 0
     assert not wiki.edits
+
+
+def test_monitor_observes_every_twelve_hours_and_respects_saved_interval(settings, store):
+    wiki = ProjectWiki(OPEN)
+    monitor = ProjectMonitor(settings, store, wiki)
+    assert monitor.tick(now=1000)
+    reads = len(wiki.metadata_reads)
+    assert not monitor.tick(now=44199)
+    assert len(wiki.metadata_reads) == reads
+    assert monitor.tick(now=44200)
+    assert len(wiki.metadata_reads) == reads + 1
+    store.set_state('projects:config', {'search_minutes': 60})
+    assert monitor.tick(now=47800)
+    assert get_schedule(settings, store, 'projects')['search_minutes'] == 60
 
 
 def test_daily_worker_saves_only_changed_annual_pages_without_summary(settings, store):
@@ -313,7 +340,7 @@ def test_daily_deadline_and_shared_public_admin_interface(settings, store):
     worker.schedule(now)
     due = store.queue('projects')[0]['due_at']
     assert datetime.fromtimestamp(due, settings.zone).strftime('%H:%M') == '06:00'
-    assert get_schedule(settings, store, 'projects') == {'run_time': '06:00', 'search_minutes': 360}
+    assert get_schedule(settings, store, 'projects') == {'run_time': '06:00', 'search_minutes': 720}
     ProjectMonitor(settings, store, ProjectWiki()).tick(force=True)
     client = create_app(settings, store).test_client()
     for path in ('/', '/processors/projects', '/processors/projects?view=open', '/processors/projects?view=pending',

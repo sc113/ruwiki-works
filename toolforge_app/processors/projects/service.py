@@ -8,7 +8,7 @@ from ...wiki import RUN_ERRORS, WikiClient, WikiError, require_bot_permission
 from ..daily_worker import DailyWorker, Controlled
 from .config import get_config
 from .inventory import refresh, record, report, selection, complete_year
-from .rules import format_discussion, BARE_NAV, visible_text
+from .rules import format_discussion, edit_comment, BARE_NAV, visible_text
 
 
 class ProjectWorker(DailyWorker):
@@ -70,9 +70,7 @@ class ProjectWorker(DailyWorker):
                     if text == base.text:
                         self.event('unchanged', 'Изменений не требуется', title=title, revision=base.revision)
                         continue
-                    comment = 'зачёркивание завершённых обсуждений и обновление навигации'
-                    if config['spacing']:
-                        comment += ', форматирование'
+                    comment = edit_comment(base.text, text)
                     self.event('edit_summary', 'Описание правки: ' + comment, title=title, edit_summary=comment)
                     old_navigation = BARE_NAV.findall(visible_text(base.text))
                     new_navigation = BARE_NAV.findall(visible_text(text))

@@ -16,7 +16,7 @@ from flask import (Flask, Response, abort, flash, redirect, render_template,
 
 from .config import Settings
 from .overview import OVERVIEW, build_overview
-from .processors import PROCESSORS, TASKS, Processor, get_processor, get_task
+from .processors import PROCESSORS, PROCESSOR_GROUPS, TASKS, Processor, get_processor, get_task
 from .processors.obkat.report import (CHECKS, fix_guidance,
                                       open_nominations, plain_title, report_txt, wiki_url)
 from .processors.obkat.service import report as obkat_report
@@ -204,7 +204,10 @@ def create_app(settings=None, store=None, *, admin_preview=False):
     def context():
         heartbeat = store.get_state("worker_heartbeat", 0)
         preview = preview_active()
-        return dict(processors=PROCESSORS, settings=execution_settings(settings, store), csrf_token=csrf_token,
+        return dict(processors=PROCESSORS,
+            navigation_groups=[dict(spec=group, processors=[get_processor(slug) for slug in group.processors])
+                               for group in PROCESSOR_GROUPS],
+            settings=execution_settings(settings, store), csrf_token=csrf_token,
             now=time.time(),
             username="admin" if preview else session.get("username"),
             is_admin=preview or authenticated_admin(),

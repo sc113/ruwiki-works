@@ -2,7 +2,7 @@
 import json
 import time
 
-from .processors import TASKS, Processor, get_processor
+from .processors import TASKS, PROCESSOR_GROUPS, Processor, get_processor
 from .processors.obkat.service import report as obkat_report
 from .processors.daily import TASK_SLUGS as DAILY_TASKS, get_config, report as daily_report
 from .schedules import get_schedule, schedule_fields, next_task_time, next_month_end_time
@@ -104,13 +104,10 @@ def build_overview(settings, store, now=None):
             "dry_run": bool(latest['dry_run']) if running else (
                 not (settings.wiki_write and config["autosave"]) if maintenance else not settings.wiki_write),
             "month_end": next_month_end(settings, now, store) if processor.slug == "obkat" else None})
-    groups = []
     for card in cards:
-        group = next((group for group in groups if group["processor"] == card["processor"]), None)
-        if group is None:
-            group = {"processor": card["processor"], "cards": []}
-            groups.append(group)
-        group["cards"].append(card)
+        card['display_title'] = card['processor'].nav_title or card['task'].title
+    groups = [dict(spec=group, cards=[card for card in cards if card['processor'].slug in group.processors])
+              for group in PROCESSOR_GROUPS]
     return {"cards": cards, "groups": groups, "enabled_count": sum(card["enabled"] for card in cards),
         "total_problems": sum(card["report"]["problems"] for card in cards if card["report"]),
         "total_queued": sum(card["queued"] for card in cards), "now": now}

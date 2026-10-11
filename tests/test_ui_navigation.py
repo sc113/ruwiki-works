@@ -5,6 +5,36 @@ import pytest
 
 from toolforge_app.processors.maintenance.config import defaults
 from toolforge_app.web import create_app
+from toolforge_app.overview import build_overview
+from test_web import set_session
+
+
+def test_discussions_share_group_but_keep_distinct_pages_and_admin_controls(settings, store):
+    overview = build_overview(settings, store)
+    group = overview['groups'][0]
+    assert group['spec'].slug == 'discussions'
+    assert group['spec'].title == 'Обсуждения и номинации'
+    assert [card['task'].slug for card in group['cards']] == ['obkat', 'projects']
+    assert [card['display_title'] for card in group['cards']] == ['Категории', 'Проекты']
+    all_tasks = [card['task'].slug for group in overview['groups'] for card in group['cards']]
+    assert len(all_tasks) == len(set(all_tasks)) == 11
+    client = create_app(settings, store).test_client()
+    home = client.get('/').get_data(as_text=True)
+    section = home.split('aria-labelledby="group-discussions"', 1)[1].split('</section>', 1)[0]
+    assert '/tasks/obkat' in section and '/tasks/projects' in section
+    assert '2 задачи' in section and 'Поиск каждые 12 ч' in section
+    assert '/processors/discussions' not in home
+    for slug, title in [('obkat', 'Категории'), ('projects', 'Проекты')]:
+        html = client.get('/processors/' + slug).get_data(as_text=True)
+        navigation = html.split('class="processor-group-links"', 1)[1].split('</nav>', 1)[0]
+        assert f'href="/processors/{slug}" class="processor-link selected"' in navigation
+        assert f'<span>{title}</span>' in navigation
+        mobile_group = html.split('<optgroup label="Обсуждения и номинации">', 1)[1].split('</optgroup>', 1)[0]
+        assert 'value="/processors/obkat"' in mobile_group and 'value="/processors/projects"' in mobile_group
+    set_session(client, settings.admin_username)
+    admin = client.get('/').get_data(as_text=True)
+    section = admin.split('aria-labelledby="group-discussions"', 1)[1].split('</section>', 1)[0]
+    assert '/admin/tasks/obkat/control' in section and '/admin/tasks/projects/control' in section
 
 
 def populate(store, slug, count=45):

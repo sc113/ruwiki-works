@@ -51,7 +51,7 @@ def get_schedule(settings, store, slug):
     result = {}
     for timer in timer_definitions(slug):
         if timer.kind == 'search':
-            default = max(1, settings.poll_seconds // 60) if slug == 'obkat' else 360
+            default = max(1, settings.poll_seconds // 60) if slug == 'obkat' else get_task(slug).search_minutes
         elif timer.kind == 'weekday':
             default = 0
         elif timer.kind == 'month_end' and slug != 'obkat':
