@@ -82,17 +82,19 @@ class ProjectWorker(DailyWorker):
                         revision, code = base.revision, 'would_edit'
                     else:
                         revision = self.wiki.edit_project_discussion(base, text, comment, allowed)
-                        summary['changed'] += 1
-                        code = 'edited'
+                        code = 'edited' if revision != base.revision else 'unchanged'
+                        summary['changed'] += code == 'edited'
                         updated = record(replace(base, revision=revision, text=text), time.time(), config, self.settings.bot_username)
                         row.clear()
                         row.update(updated)
                         complete_year(self.store, row)
                         self.store.set_state('projects:inventory', inventory)
-                    self.event(code, 'Подготовлены изменения обсуждения' if dry_run else 'Обсуждение обработано',
-                               title=title, revision=revision, closed=closed, diff_before=base.text, diff_after=text,
+                    self.event(code, 'Подготовлены изменения обсуждения' if dry_run else
+                               'Обсуждение обработано' if code == 'edited' else 'Изменений не требуется',
+                               title=title, revision=revision, closed=closed,
+                               **(dict(diff_before=base.text, diff_after=text) if code != 'unchanged' else {}),
                                changes=[dict(template='ОБПРО-Навигация', action='updated')]
-                                       if old_navigation != new_navigation else [])
+                                       if code != 'unchanged' and old_navigation != new_navigation else [])
                 except WikiError as exc:
                     if exc.code in RUN_ERRORS:
                         raise

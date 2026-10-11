@@ -107,7 +107,9 @@ def normalize_spacing(text):
             previous = 'text'
     while result and not result[-1].strip():
         result.pop()
-    return '\n'.join(result) + '\n'
+    # MediaWiki strips a final newline when saving. Match the stored text so a
+    # formatting-only pass does not repeatedly propose an empty edit.
+    return '\n'.join(result)
 
 
 def format_discussion(text, spacing=False):

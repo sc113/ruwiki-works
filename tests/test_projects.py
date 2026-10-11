@@ -44,8 +44,8 @@ def test_spacing_rules_are_idempotent_and_preserve_discussion_text():
     source = '<noinclude>{{ОБПРО-Навигация}}</noinclude>\n==Первый==\n\n\nОбсуждение.\n===Итог===\n\nРешено.\n\n\n==Второй==\n===Подноминация===\n\nТекст.\n\n'
     result, _, _ = format_discussion(source, spacing=True)
     assert '}}</noinclude>\n\n== <s>Первый</s> ==\nОбсуждение.\n\n=== Итог ===\nРешено.' in result
-    assert '== Второй ==\n=== Подноминация ===\nТекст.\n' in result
-    assert '\n\n\n' not in result and result.endswith('Текст.\n')
+    assert '== Второй ==\n=== Подноминация ===\nТекст.' in result
+    assert '\n\n\n' not in result and result.endswith('Текст.')
     assert format_discussion(result, spacing=True)[0] == result
 
 
@@ -109,7 +109,7 @@ def test_malformed_heading_is_not_struck():
 
 class ProjectWiki:
     def __init__(self, source=CLOSED):
-        self.data = {TITLE: Revision(TITLE, 10, time.time() - 100, source)}
+        self.data = {TITLE: Revision(TITLE, 10, time.time() - 100, source.strip())}
         self.edits, self.content_reads, self.metadata_reads = [], [], []
         self.request_guard = lambda: None
         self.error = None
@@ -133,7 +133,7 @@ class ProjectWiki:
             raise WikiError(self.error)
         assert base.title in allowed and self.data[base.title].revision == base.revision
         self.edits.append((base.title, text, summary))
-        self.data[base.title] = replace(base, revision=base.revision + 1, text=text)
+        self.data[base.title] = replace(base, revision=base.revision + 1, text=text.strip())
         return base.revision + 1
 
 
@@ -188,6 +188,22 @@ def test_dry_run_keeps_pending_changes_and_never_saves(settings, store):
     run = store.list_runs(processor='projects')[0]
     assert run['dry_run'] and json.loads(run['summary'])['proposed'] == 1
     assert not store.get_state('projects:completed_years', {})
+
+
+def test_mediawiki_normalization_does_not_requeue_or_count_empty_edits(settings, store):
+    settings.wiki_write = True
+    wiki = ProjectWiki(OPEN)
+    worker = ProjectWorker(settings, store, wiki=wiki)
+    worker.execute(queue(store))
+    assert not wiki.edits and report(store)['to_process'] == 0
+    # The API can report Success with the old revision for an empty edit.
+    wiki.data[TITLE] = replace(wiki.data[TITLE], text=wiki.data[TITLE].text + '\n')
+    wiki.edit_project_discussion = Mock(return_value=10)
+    worker.execute(queue(store))
+    run = store.list_runs(processor='projects')[0]
+    assert json.loads(run['summary'])['changed'] == 0
+    assert any(event['code'] == 'unchanged' for event in json.loads(run['events']))
+    assert not any(event['code'] == 'edited' for event in json.loads(run['events']))
 
 
 def test_archive_without_formal_conclusions_is_reported_and_kept_active(settings, store):
