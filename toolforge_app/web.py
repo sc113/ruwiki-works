@@ -20,6 +20,7 @@ from .processors import PROCESSORS, TASKS, Processor, get_processor, get_task
 from .processors.obkat.report import (CHECKS, fix_guidance,
                                       open_nominations, plain_title, report_txt, wiki_url)
 from .processors.obkat.service import report as obkat_report
+from .processors.projects.inventory import report as project_report
 from .storage import Store
 from .processors.daily import TASK_SLUGS, fields, form_value, get_config, parse_form
 from .processors.logs import public_run
@@ -500,18 +501,22 @@ def create_app(settings=None, store=None, *, admin_preview=False):
                 history_has_next=len(history) > 25, items=items, query=query,
                 page_number=page_number, has_next=has_next,
                 config_updated=store.get_state(task_slug + ":config_updated"))
-        task_state = build_overview(settings, store)["cards"][0]
+        task_state = next(card for card in build_overview(settings, store)['cards'] if card['task'].slug == slug)
         report = task_state["report"]
         active = request.args.get("view", "problems")
         active = {"nuances": "open"}.get(active, active)
-        if active not in {"problems", "open", "logs"}:
+        if active not in ({"problems", "open", "pending", "logs"} if slug == 'projects' else {"problems", "open", "logs"}):
             abort(404)
         query = request.args.get("q", "").strip()
         kind = request.args.get("type", "")
         month = request.args.get("month", "")
         opened = open_nominations(report)
-        items = opened if active == "open" else [i for i in report["items"] if i["section"] == "problems"]
-        labels = {"no_itog": "Без подитогов", "sub_itog_no_main": "С подитогами"} if active == "open" else CHECKS
+        items = opened if active == "open" else report['pending_articles'] if active == 'pending' else [i for i in report["items"] if i["section"] == "problems"]
+        if active == 'pending':
+            items = [dict(item, month=item['title'].rsplit('/', 1)[-1], type='pending',
+                          display_title=item['title'], label='', detail='') for item in items]
+        labels = ({} if active == 'pending' else {"no_itog": "Без подитогов", "sub_itog_no_main": "С подитогами"} if active == "open" else
+                  {**CHECKS, **{item['type']: item['label'] for item in items if item['type'] not in CHECKS}})
         available_types = [(key, labels.get(key, key), sum(i["type"] == key for i in items)) for key in labels
             if any(i["type"] == key for i in items)]
         available_months = sorted({i["month"] for i in items}, reverse=True)
@@ -523,22 +528,27 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         except ValueError:
             abort(400)
         total = len(items)
-        history = store.list_runs(limit=26, offset=(history_page - 1) * 25, details=False)
+        history = store.list_runs(limit=26, offset=(history_page - 1) * 25, processor=slug, details=False)
         for run in history:
             run["summary"] = json.loads(run["summary"])
         for item in items:
             if active == "problems":
-                item["fix"] = fix_guidance(item)
+                item["fix"] = item.get('fix') or fix_guidance(item)
                 item["subject"] = plain_title(item.get("parent_title") or item["display_title"])
                 item["context"] = "Раздел: " + item["display_title"] if item.get("parent_title") else item["detail"]
         return render_template("processor.html", module=module, active=active, report=report,
             items=items if active == "open" else items[(page_number - 1) * 40:page_number * 40], total=total, query=query, kind=kind, month=month,
             available_types=available_types, available_months=available_months, history=history[:25],
-            page_number=page_number, has_next=active == "problems" and total > page_number * 40,
+            page_number=page_number, has_next=active in {'problems', 'pending'} and total > page_number * 40,
             history_page=history_page, history_has_next=len(history) > 25, open_count=len(opened),
             queue=task_state["pending"], task_state=task_state,
-            control=store.control(),
-            local_snapshot=any(p["origin"] == "import" for p in store.page_headers()))
+            task=task_state['task'], control=store.control(slug),
+            config=get_config(store, slug) if slug == 'projects' else None,
+            config_fields=[dict(key=key, label=label, kind=kind, group=group,
+                                value=form_value(get_config(store, slug), key, kind))
+                           for key, label, kind, group in fields(slug)] if slug == 'projects' else [],
+            config_updated=store.get_state(slug + ':config_updated'),
+            local_snapshot=slug == 'obkat' and any(p["origin"] == "import" for p in store.page_headers()))
 
     @app.route("/runs/<run_id>")
     @app.route('/runs/<run_id>/fragment', endpoint='run_fragment')
@@ -621,12 +631,13 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         return Response(plain_log(run), content_type="text/plain; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="{run["processor"]}-{run_id}.txt"'})
 
-    @app.route("/reports/obkat.<extension>")
-    def export_report(extension):
+    @app.route("/reports/projects.<extension>", defaults={'slug': 'projects'})
+    @app.route("/reports/obkat.<extension>", defaults={'slug': 'obkat'})
+    def export_report(extension, slug):
         run_id = request.args.get("run")
         if run_id:
             run = store.run(run_id)
-            if not run or run["processor"] != "obkat":
+            if not run or run["processor"] != slug:
                 abort(404)
             report = json.loads(run["report"])
             if report.get('_details_expired_at'):
@@ -634,7 +645,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             if not report:
                 abort(409)
         else:
-            report = obkat_report(store)
+            report = project_report(store) if slug == 'projects' else obkat_report(store)
         if extension == "json":
             content, mime = json.dumps(report, ensure_ascii=False, indent=2), "application/json"
         elif extension == "txt":
@@ -651,7 +662,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         else:
             abort(404)
         response = Response(content, content_type=mime + "; charset=utf-8")
-        response.headers["Content-Disposition"] = f'attachment; filename="obkat.{extension}"'
+        response.headers["Content-Disposition"] = f'attachment; filename="{slug}.{extension}"'
         return response
 
     @app.route("/runs/<run_id>/log.json")
@@ -729,7 +740,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         if store.control(slug)["mode"] != "active":
             abort(409, "Возобновите задачу перед ручным запуском.")
         mode = request.form.get("mode", "normal")
-        if mode not in {"normal", "recheck"} or mode == "recheck" and get_task(slug).processor not in {"translations", "sections", "categories"}:
+        if mode not in {"normal", "recheck"} or mode == "recheck" and get_task(slug).processor not in {"translations", "sections", "categories", "projects"}:
             abort(400)
         try:
             receipt = store.request_run(slug, session['username'], kind='recheck' if mode == 'recheck' else 'full')

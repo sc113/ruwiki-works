@@ -64,7 +64,7 @@ def nomination_categories(title):
     return {match[1].strip().lower() for match in category_pattern.finditer(title) if match.start() < end}
 
 
-def analyze_text(content):
+def analyze_text(content, *, nomination_level=3, subjects=nomination_categories):
     lines = content.split('\n')
 
     header_pattern = re.compile(r'^(=+)\s*(.+?)\s*=+\s*$')
@@ -155,7 +155,7 @@ def analyze_text(content):
     # ПРОВЕРКА: Пустые номинации (заголовок без текста до следующего заголовка)
     # Не считаем пустыми, если после идёт подзаголовок (групповая номинация)
     for idx, (level, line_num, title, is_struck) in enumerate(all_headers):
-        if level == 3 and not is_date_header(title) and not is_service_header(title) and not is_any_itog_header(title):
+        if level == nomination_level and not is_date_header(title) and not is_service_header(title) and not is_any_itog_header(title):
             if idx + 1 < len(all_headers):
                 next_level, next_line, _, _ = all_headers[idx + 1]
                 if next_level > level:
@@ -170,14 +170,14 @@ def analyze_text(content):
 
     # ПРОВЕРКА: Номинации без итога (уровень 3, не зачёркнуты, нет итога ниже)
     for idx, (level, line_num, title, is_struck) in enumerate(all_headers):
-        if level == 3 and not is_struck and not is_date_header(title) and not is_service_header(title) and not is_any_itog_header(title):
+        if level == nomination_level and not is_struck and not is_date_header(title) and not is_service_header(title) and not is_any_itog_header(title):
             # Ищем итог на уровне 4 до следующей номинации/даты
             has_itog = False
             for j in range(idx + 1, len(all_headers)):
-                next_level, _, next_title, _ = all_headers[j]
-                if next_level <= 3:
+                next_level, _, next_title, next_struck = all_headers[j]
+                if next_level <= nomination_level:
                     break
-                if next_level == 4 and is_final_itog(next_title):
+                if next_level == nomination_level + 1 and is_final_itog(next_title) and not next_struck:
                     has_itog = True
                     break
             if not has_itog:
@@ -190,7 +190,7 @@ def analyze_text(content):
     # ПРОВЕРКА: Подитоги без основного итога
     # Проблема: есть подноминации без итогов, но есть подитоги для других подноминаций
     for idx, (level, line_num, title, is_struck) in enumerate(all_headers):
-        if level == 3 and not is_date_header(title) and not is_service_header(title) and not is_any_itog_header(title):
+        if level == nomination_level and not is_date_header(title) and not is_service_header(title) and not is_any_itog_header(title):
             # Это номинация уровня 3, собираем подноминации и их итоги
             sub_nominations = []  # подноминации уровня 4
             sub_itogs = []  # итоги уровня 5
@@ -198,15 +198,15 @@ def analyze_text(content):
 
             for j in range(idx + 1, len(all_headers)):
                 next_level, next_line, next_title, next_struck = all_headers[j]
-                if next_level <= 3:
+                if next_level <= nomination_level:
                     break
-                if next_level == 4:
+                if next_level == nomination_level + 1:
                     if is_final_itog(next_title) and not next_struck:
                         has_main_itog = True
                     elif not is_service_header(next_title) and not is_any_itog_header(next_title):
                         sub_nominations.append(
                             (next_line, next_title, next_struck))
-                elif next_level == 5 and is_final_itog(next_title) and not next_struck:
+                elif next_level == nomination_level + 2 and is_final_itog(next_title) and not next_struck:
                     sub_itogs.append(next_line)
 
             # Проблема: есть подитоги уровня 5, но нет основного итога уровня 4
@@ -240,8 +240,8 @@ def analyze_text(content):
     # ПРОВЕРКА: Дублирующиеся номинации (одна категория обсуждается несколько раз)
     nominations_by_cat = defaultdict(list)
     for idx, (level, line_num, title, is_struck) in enumerate(all_headers):
-        if level == 3 and not is_date_header(title) and not is_service_header(title) and not is_any_itog_header(title):
-            cats = nomination_categories(title)
+        if level == nomination_level and not is_date_header(title) and not is_service_header(title) and not is_any_itog_header(title):
+            cats = subjects(title)
             for cat in cats:
                 nominations_by_cat[cat].append(
                     (line_num, title, is_struck))
@@ -268,7 +268,7 @@ def analyze_text(content):
         if level == 2 and is_date_header(title):
             current_date_line = line_num
         elif level == 3 and current_date_line and not is_service_header(title) and not is_any_itog_header(title):
-            cats = nomination_categories(title)
+            cats = subjects(title)
             for cat in cats:
                 nominations_by_date[(current_date_line, cat)].append(
                     (line_num, title, is_struck))
@@ -290,7 +290,7 @@ def analyze_text(content):
 
     # ПРОВЕРКА: "По всем" / "По обоим" относится только к одной подноминации
     for idx, (level, line_num, title, is_struck) in enumerate(all_headers):
-        if level >= 4 and is_group_header(title):
+        if level > nomination_level and is_group_header(title):
             # Это "По всем" на уровне 4+, считаем сколько подноминаций перед ним на том же уровне
             count_same_level = 0
             for j in range(idx - 1, -1, -1):
@@ -439,7 +439,7 @@ def analyze_text(content):
             continue
 
         if is_service_header(title) and not is_any_itog_header(title):
-            if level < 4:
+            if level <= nomination_level:
                 issues.append(
                     {'line': line_num, 'type': 'service_wrong_level', 'level': level, 'title': title})
             continue
@@ -478,7 +478,7 @@ def analyze_text(content):
             has_valid_group = False
             for k in range(idx - 1, -1, -1):
                 ck_level, _, ck_title, _ = all_headers[k]
-                if ck_level == level and is_group_header(ck_title) and level >= 4:
+                if ck_level == level and is_group_header(ck_title) and level > nomination_level:
                     has_valid_group = True
                     break
                 if ck_level < level:

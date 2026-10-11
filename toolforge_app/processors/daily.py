@@ -11,8 +11,11 @@ from .sections.inventory import report as section_report
 from .categories import TASK_SLUGS as CATEGORY_TASKS
 from .categories import config as category_config
 from .categories.inventory import report as category_report
+from .projects import TASK_SLUGS as PROJECT_TASKS
+from .projects import config as project_config
+from .projects.inventory import report as project_report
 
-TASK_SLUGS = (*MAINTENANCE_TASKS, *TRANSLATION_TASKS, *SECTION_TASKS, *CATEGORY_TASKS)
+TASK_SLUGS = (*MAINTENANCE_TASKS, *TRANSLATION_TASKS, *SECTION_TASKS, *CATEGORY_TASKS, *PROJECT_TASKS)
 
 
 def config_module(slug):
@@ -24,6 +27,8 @@ def config_module(slug):
         return section_config
     if slug in CATEGORY_TASKS:
         return category_config
+    if slug in PROJECT_TASKS:
+        return project_config
     raise ValueError('Unknown daily action')
 
 
@@ -44,6 +49,8 @@ def form_value(config, key, kind):
 
 
 def report(store, slug, config=None):
+    if slug in PROJECT_TASKS:
+        return project_report(store, slug, config)
     provider = (maintenance_report if slug in MAINTENANCE_TASKS else section_report if slug in SECTION_TASKS
                 else category_report if slug in CATEGORY_TASKS else translation_report)
     from ..issues import annotate_report

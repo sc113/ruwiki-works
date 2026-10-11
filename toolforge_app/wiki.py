@@ -304,6 +304,15 @@ class WikiClient:
             raise WikiError("outside-scope")
         return self._save(base, text, summary, minor=True)
 
+    def edit_project_discussion(self, base, text, summary, allowed_titles):
+        import re
+        from .processors.projects import PREFIX
+        if (base.title not in allowed_titles or
+                not re.fullmatch(re.escape(PREFIX) + r'20\d{2}', base.title) or
+                int(base.title.rsplit('/', 1)[1]) < 2009):
+            raise WikiError('outside-scope')
+        return self._save(base, text, summary, minor=False)
+
     def category_pages(self, titles):
         """Read category revisions and live population in batches, without following redirects."""
         result = {}

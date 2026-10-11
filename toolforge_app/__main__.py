@@ -20,6 +20,7 @@ from .processors.sections.service import SectionWorker, SectionMonitor
 from .processors.sections.history import import_legacy
 from .processors.categories import TASK_SLUGS as CATEGORY_TASKS
 from .processors.categories.service import CategoryWorker, CategoryMonitor
+from .processors.projects.service import ProjectWorker, ProjectMonitor
 
 
 def import_snapshot(source, store):
@@ -63,8 +64,9 @@ def main():
     clear.add_argument('name', choices=('bot', 'oauth'))
     worker = commands.add_parser("worker")
     worker.add_argument("--once", action="store_true")
-    worker.add_argument("--task", choices=("all", "monitor", "obkat", *TASK_SLUGS, *TRANSLATION_TASKS, *SECTION_TASKS, *CATEGORY_TASKS, "maintenance-monitor", "translations-monitor", "sections-monitor", "categories-monitor"), default="all")
+    worker.add_argument("--task", choices=("all", "monitor", "obkat", *TASK_SLUGS, *TRANSLATION_TASKS, *SECTION_TASKS, *CATEGORY_TASKS, "projects", "maintenance-monitor", "translations-monitor", "sections-monitor", "categories-monitor", "projects-monitor"), default="all")
     commands.add_parser('refresh-categories', help='Read-only category inventory and wiki format table refresh')
+    commands.add_parser('refresh-projects', help='Read-only annual project discussion report')
     commands.add_parser("refresh-maintenance", help="Read-only category counts and section template lists")
     commands.add_parser("refresh-translations", help="Read-only counts for both translation actions")
     translation_logs = commands.add_parser("import-translation-logs", help="Import checked titles from translation TSV records")
@@ -119,10 +121,17 @@ def main():
                     if args.task == "maintenance-monitor" else TranslationMonitor(settings, store) if args.task == "translations-monitor"
                     else SectionMonitor(settings, store) if args.task == "sections-monitor"
                     else CategoryMonitor(settings, store) if args.task == 'categories-monitor'
+                    else ProjectMonitor(settings, store) if args.task == 'projects-monitor'
+                    else ProjectWorker(settings, store) if args.task == 'projects'
                     else CategoryWorker(settings, store, args.task) if args.task in CATEGORY_TASKS
                     else SectionWorker(settings, store, args.task) if args.task in SECTION_TASKS
                     else TranslationWorker(settings, store, args.task) if args.task in TRANSLATION_TASKS else MaintenanceWorker(settings, store, args.task))
         instance.tick() if args.once else instance.forever()
+    elif args.command == 'refresh-projects':
+        ProjectMonitor(settings, store).tick(force=True)
+        error = store.get_state('projects:monitor_error')
+        print('projects: ' + ('error ' + error['code'] if error else
+              str(len(store.get_state('projects:inventory', {}).get('pages', []))) + ' annual pages'))
     elif args.command == "refresh-maintenance":
         InventoryMonitor(settings, store).tick(force=True)
         for slug in TASK_SLUGS:

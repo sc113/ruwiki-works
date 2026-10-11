@@ -152,7 +152,8 @@ def build_report(page_rows):
 
 def report_txt(report):
     lines = ["ОТЧЁТ ОБ АНАЛИЗЕ СТРУКТУРЫ", "=" * 70]
-    for kind, label in CHECKS.items():
+    labels = {**CHECKS, **{item['type']: item['label'] for item in report['items'] if item['type'] not in CHECKS}}
+    for kind, label in labels.items():
         items = [i for i in report["items"] if i["type"] == kind]
         if items:
             lines.extend(["", f"{label}: {len(items)}", "-" * 40])
