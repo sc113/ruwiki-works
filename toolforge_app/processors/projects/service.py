@@ -3,7 +3,7 @@ import time
 from dataclasses import replace
 
 from ...run_statistics import report_changes, report_snapshot
-from ...schedules import search_due
+from ...schedules import search_interval
 from ...wiki import RUN_ERRORS, WikiClient, WikiError, require_bot_permission
 from ..daily_worker import DailyWorker, Controlled
 from .config import get_config
@@ -152,8 +152,11 @@ class ProjectMonitor:
             config = get_config(self.store, 'projects')
             requests = self.store.queue('projects-monitor')
             attempt = self.store.get_state('projects:monitor_attempt', {})
+            inventory = self.store.get_state('projects:inventory', {})
+            last_check = max(attempt.get('at', 0), inventory.get('checked_at', 0)
+                             if inventory.get('selection') == selection(config) else 0)
             if not (force or requests or attempt.get('selection') != selection(config) or
-                    search_due(self.settings, self.store, 'projects', attempt.get('at'), now)):
+                    now - last_check >= search_interval(self.settings, self.store, 'projects')):
                 return False
             self.store.set_state('projects:monitor_attempt', dict(at=now, selection=selection(config)))
             try:

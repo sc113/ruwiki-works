@@ -172,36 +172,18 @@ def test_monitor_reads_only_new_revisions_and_tracks_actual_observations(setting
     assert not wiki.edits
 
 
-def moscow_time(hour, minute=0, day=12):
-    from toolforge_app.schedules import MOSCOW
-    return datetime(2026, 10, day, hour, minute, tzinfo=MOSCOW).timestamp()
-
-
-def test_monitor_checks_at_noon_and_midnight_without_drifting(settings, store):
+def test_monitor_observes_every_twelve_hours_and_respects_saved_interval(settings, store):
     wiki = ProjectWiki(OPEN)
     monitor = ProjectMonitor(settings, store, wiki)
-    assert monitor.tick(now=moscow_time(9))  # Bootstrap does not move fixed times.
+    assert monitor.tick(now=1000)
     reads = len(wiki.metadata_reads)
-    assert not monitor.tick(now=moscow_time(11, 59))
+    assert not monitor.tick(now=44199)
     assert len(wiki.metadata_reads) == reads
-    assert monitor.tick(now=moscow_time(12))
-    assert not monitor.tick(now=moscow_time(12, 1))
-    assert monitor.tick(now=moscow_time(15), force=True)
-    assert not monitor.tick(now=moscow_time(23, 59))
-    assert monitor.tick(now=moscow_time(0, day=13))
-    assert not monitor.tick(now=moscow_time(0, 1, day=13))
-
-
-def test_monitor_catches_up_once_and_uses_edited_clock_times(settings, store):
-    from toolforge_app.schedules import save_schedule
-    monitor = ProjectMonitor(settings, store, ProjectWiki(OPEN))
-    assert monitor.tick(now=moscow_time(9))
-    assert monitor.tick(now=moscow_time(14))  # Missed noon while monitor was down.
-    assert not monitor.tick(now=moscow_time(14, 1))
-    save_schedule(settings, store, 'projects', {'search_times': '24:00, 18:00'}, 'admin', partial=True)
-    assert not monitor.tick(now=moscow_time(17, 59))
-    assert monitor.tick(now=moscow_time(18))
-    assert get_schedule(settings, store, 'projects')['search_times'] == '00:00, 18:00'
+    assert monitor.tick(now=44200)
+    assert len(wiki.metadata_reads) == reads + 1
+    store.set_state('projects:config', {'search_minutes': 60})
+    assert monitor.tick(now=47800)
+    assert get_schedule(settings, store, 'projects')['search_minutes'] == 60
 
 
 def test_daily_worker_saves_only_changed_annual_pages_without_summary(settings, store):
@@ -312,6 +294,7 @@ def test_retiring_archives_keeps_discovery_of_new_years(settings, store):
     refresh(wiki, store, defaults('projects'), now=1000)
     assert report(store)['completed_years'] == ['2026']
     wiki.data[PREFIX + '2027'] = Revision(PREFIX + '2027', 20, 1000, OPEN)
+    wiki.request_guard = lambda: None
     refresh(wiki, store, defaults('projects'), now=2000)
     assert wiki.metadata_reads == [TITLE, PREFIX + '2027']
     assert report(store)['pages'] == 2 and report(store)['completed_years'] == ['2026']
@@ -351,7 +334,7 @@ def test_daily_deadline_and_shared_public_admin_interface(settings, store):
     worker.schedule(now)
     due = store.queue('projects')[0]['due_at']
     assert datetime.fromtimestamp(due, settings.zone).strftime('%H:%M') == '06:00'
-    assert get_schedule(settings, store, 'projects') == {'run_time': '06:00', 'search_times': '00:00, 12:00'}
+    assert get_schedule(settings, store, 'projects') == {'run_time': '06:00', 'search_minutes': 720}
     ProjectMonitor(settings, store, ProjectWiki()).tick(force=True)
     client = create_app(settings, store).test_client()
     for path in ('/', '/processors/projects', '/processors/projects?view=open', '/processors/projects?view=pending',
@@ -379,42 +362,11 @@ def test_wiki_edit_scope_and_bot_flags(settings):
             wiki.edit_project_discussion(Revision(title, 10), CLOSED, 'comment', allowed)
 
 
-def test_fixed_search_overview_and_admin_schedule_roundtrip(settings, store):
-    from toolforge_app.overview import build_overview
-    from toolforge_app.schedules import next_search_time, next_task_time, search_interval
-    store.set_state('projects:monitor_attempt', {'at': moscow_time(12)})
-    card = next(c for c in build_overview(settings, store, now=moscow_time(23))['cards'] if c['task'].slug == 'projects')
-    assert card['next_search'] == moscow_time(0, day=13)
-    assert next_search_time(settings, store, 'projects', moscow_time(0), moscow_time(1)) == moscow_time(12)
-    assert next_task_time(settings, store, 'projects', moscow_time(23)) == moscow_time(6, day=13)
-    assert search_interval(settings, store, 'projects') == 12 * 3600
-    client = create_app(settings, store).test_client()
-    public = client.get('/processors/discussions?task=projects').get_data(as_text=True)
-    assert '00:00 и 12:00 МСК' in public and 'Каждые 12 ч' not in public
-    set_session(client, settings.admin_username)
-    admin = client.get('/processors/discussions?task=projects').get_data(as_text=True)
-    assert 'name="search_times" value="00:00, 12:00"' in admin
-    assert 'name="search_minutes"' not in admin
-    response = client.post('/admin/tasks/projects/schedule', data={
-        'csrf': 'csrf-test', 'run_time': '06:00', 'search_times': '12:00, 24:00, 12:00'})
-    assert response.status_code == 302
-    assert get_schedule(settings, store, 'projects') == {'search_times': '00:00, 12:00', 'run_time': '06:00'}
-    before = store.get_state('projects:config')
-    client.post('/admin/tasks/projects/schedule', data={
-        'csrf': 'csrf-test', 'run_time': '07:00', 'search_times': '12:00, 24:01'})
-    assert store.get_state('projects:config') == before
-
-
-def test_failed_fixed_search_waits_for_next_slot(settings, store):
+def test_processing_scan_also_resets_twelve_hour_search_interval(settings, store):
     wiki = ProjectWiki(OPEN)
     monitor = ProjectMonitor(settings, store, wiki)
-    assert monitor.tick(now=moscow_time(9))
-    original = wiki.request
-    wiki.request = Mock(side_effect=WikiError('network'))
-    assert monitor.tick(now=moscow_time(12))
-    assert store.get_state('projects:monitor_error')['code'] == 'network'
-    assert not monitor.tick(now=moscow_time(12, 1))
-    assert wiki.request.call_count == 1
-    wiki.request = original
-    assert monitor.tick(now=moscow_time(0, day=13))
-    assert store.get_state('projects:monitor_error') is None
+    assert monitor.tick(now=1000)
+    wiki.request_guard = lambda: None
+    refresh(wiki, store, defaults('projects'), now=2000)
+    assert not monitor.tick(now=44200)
+    assert monitor.tick(now=45200)

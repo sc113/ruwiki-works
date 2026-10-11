@@ -22,7 +22,7 @@ def test_discussions_use_one_menu_entry_and_two_action_tabs(settings, store):
     home = client.get('/').get_data(as_text=True)
     section = home.split('aria-labelledby="group-discussions"', 1)[1].split('</section>', 1)[0]
     assert '/tasks/obkat' in section and '/tasks/projects' in section
-    assert '2 действия' in section and 'Поиск 00:00 и 12:00 МСК' in section
+    assert '2 действия' in section and 'Поиск каждые 12 ч' in section
     assert 'href="/processors/discussions"' in section
     for slug, title in [('obkat', 'Категории'), ('projects', 'Проекты')]:
         html = client.get('/processors/discussions?task=' + slug).get_data(as_text=True)

@@ -29,7 +29,6 @@ TIMERS = {
     "after_edit": Timer("after_edit", "quiet_minutes", "После последней правки", "number", "мин", "quiet_minutes", 1, 1440),
     "month_end": Timer("month_end", "month_end_time", "Форматирование в конце месяца", "time", "МСК", "month_end_time"),
     "search": Timer("search", "search_minutes", "Поиск изменений", "number", "мин", 360, 1, 10080),
-    "search_times": Timer("search_times", "search_times", "Поиск изменений", "text", "МСК", ""),
     "weekly": Timer("weekly", "run_time", "Еженедельно", "time", "МСК", "05:00"),
     "weekday": Timer("weekday", "weekday", "День недели", "select", "", 0, 0, 6),
 }
@@ -39,7 +38,7 @@ def timer_definitions(slug):
     task = get_task(slug)
     if not task or not task.schedules:
         return []
-    definitions = [TIMERS['search_times' if task.search_times else 'search']]
+    definitions = [TIMERS['search']]
     for kind in task.schedules:
         if kind == 'weekly':
             definitions.append(TIMERS['weekday'])
@@ -51,9 +50,7 @@ def get_schedule(settings, store, slug):
     saved = store.get_state(slug + ":config", {})
     result = {}
     for timer in timer_definitions(slug):
-        if timer.kind == 'search_times':
-            default = get_task(slug).search_times
-        elif timer.kind == 'search':
+        if timer.kind == 'search':
             default = max(1, settings.poll_seconds // 60) if slug == 'obkat' else get_task(slug).search_minutes
         elif timer.kind == 'weekday':
             default = 0
@@ -68,25 +65,7 @@ def get_schedule(settings, store, slug):
 
 
 def search_interval(settings, store, slug):
-    schedule = get_schedule(settings, store, slug)
-    if schedule.get('search_times'):
-        minutes = sorted(int(clock[:2]) * 60 + int(clock[3:]) for clock in schedule['search_times'].split(', '))
-        return max(b - a for a, b in zip(minutes, minutes[1:] + [minutes[0] + 1440])) * 60
-    return schedule['search_minutes'] * 60
-
-
-def next_search_time(settings, store, slug, checked_at, now):
-    schedule = get_schedule(settings, store, slug)
-    if schedule.get('search_times'):
-        return min(next_daily_time(clock, checked_at if checked_at is not None else now)
-                   for clock in schedule['search_times'].split(', '))
-    return checked_at + schedule['search_minutes'] * 60 if checked_at else None
-
-
-def search_due(settings, store, slug, attempted_at, now):
-    if attempted_at is None:
-        return True
-    return now >= next_search_time(settings, store, slug, attempted_at, now)
+    return get_schedule(settings, store, slug)['search_minutes'] * 60
 
 
 def schedule_fields(settings, store, slug):
@@ -104,28 +83,18 @@ def parse_clock(value):
     return value
 
 
-def parse_search_times(value):
-    clocks = str(value).split(',')
-    if not 1 <= len(clocks) <= 24:
-        raise ValueError('Поиск изменений: укажите от 1 до 24 времён через запятую')
-    return ', '.join(sorted({parse_clock('00:00' if clock.strip() == '24:00' else clock.strip())
-                             for clock in clocks}))
-
-
 def parse_schedule(slug, values, *, partial=False):
     definitions = timer_definitions(slug)
     allowed = {timer.key for timer in definitions}
     if set(values) - allowed:
         raise ValueError("Неизвестный параметр расписания")
-    if not definitions or not values or not partial and (allowed - {'search_minutes', 'search_times'}) - set(values):
+    if not definitions or not values or not partial and (allowed - {'search_minutes'}) - set(values):
         raise ValueError("Заполните все поля расписания")
     parsed = {}
     for timer in definitions:
         if timer.key not in values:
             continue
-        if timer.kind == 'search_times':
-            parsed[timer.key] = parse_search_times(values[timer.key])
-        elif timer.input_type == "time":
+        if timer.input_type == "time":
             parsed[timer.key] = parse_clock(str(values[timer.key]))
         else:
             raw = str(values[timer.key]).strip()
