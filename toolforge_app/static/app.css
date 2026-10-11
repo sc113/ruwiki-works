@@ -1926,6 +1926,10 @@ select {
 .run-count { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; color: var(--body); }
 .run-count > span:first-child { white-space: nowrap; }
 .run-count strong { color: var(--text); font-size: 17px; font-weight: 600; }
+.run-count.checked { color: #b3bfd0; }
+.run-count.checked strong { color: var(--body); font-weight: 500; }
+.run-count.completed { font-weight: 500; }
+.run-count.completed strong { color: var(--accent-dark); }
 .run-count.warning strong, .run-count.warning .run-delta { color: var(--amber); }
 .run-count.error strong { color: var(--red); }
 .run-count.muted, .run-count.muted strong { color: var(--muted); }

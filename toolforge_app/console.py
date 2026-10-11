@@ -31,8 +31,8 @@ def run_metrics(run, *, compact=False):
     for field in ("problems", "skipped"):
         if type(report.get(field)) is int:
             summary.setdefault("report_" + field, report[field])
-    metrics = [dict(label="проверено", value=summary.get("checked")),
-               dict(label="выполнено", value=summary.get("changed", 0))]
+    metrics = [dict(label="проверено", value=summary.get("checked"), tone="checked"),
+               dict(label="выполнено", value=summary.get("changed", 0), tone="completed")]
     if summary.get("proposed"):
         metrics.append(dict(label="подготовлено", value=summary["proposed"], tone="muted"))
     if "report_problems" in summary or "problems" in summary:
