@@ -81,8 +81,8 @@ class History:
                                 break  # Synonyms in one RQ are one occurrence.
                 if section is not None and len({heading for _, heading in matches}) > 1:
                     raise WikiError("ambiguous-section-history")
-                if section is not None and len(matches) > 1:
-                    raise WikiError("ambiguous-template-occurrence")
+                # Occurrences in one section share its history search, including
+                # redirects. The transform leaves existing dates untouched.
                 memo[position] = matches[0] if matches else None
                 if self.config["debug_output"]:
                     self.event("history_probe", "Проверена историческая версия", revision=self.records()[position]["id"],

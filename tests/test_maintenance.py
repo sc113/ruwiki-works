@@ -147,10 +147,40 @@ def test_revision_limit_prevents_guessed_dates():
         transform(MaintenanceWiki(), max_revisions=1)
 
 
-def test_multiple_identical_templates_in_one_section_are_not_given_guessed_dates():
+def test_multiple_identical_templates_in_one_section_use_its_installation_date():
     wiki = MaintenanceWiki(['{{Факты}}', '{{Факты}}\n{{Факты}}'])
-    with pytest.raises(WikiError, match='ambiguous-template-occurrence'):
-        transform(wiki)
+    text, changes, notes = transform(wiki)
+    assert text.count('{{Проверить факты|дата=2020-01-01}}') == 2
+    assert len(changes) == 2 and not notes
+    assert all(change['revision'] == 1 for change in changes)
+
+
+@pytest.mark.parametrize('mode', [1, 2, 3])
+def test_undated_redirect_in_same_section_as_dated_template_uses_section_history(mode):
+    dated = '{{проверить факты|дата=2020-01-02}}'
+    wiki = MaintenanceWiki(['Текст', '== Факты ==\n{{Факты}}',
+                            '== Факты ==\n' + dated,
+                            '== Факты ==\n' + dated + '\n{{Факты}}'])
+    text, changes, notes = transform(wiki, search_mode=mode)
+    assert dated in text
+    assert text.count('дата=2020-01-02') == 2
+    assert len(changes) == 1 and not notes
+    assert changes[0]['date'] == '2020-01-02' and changes[0]['revision'] == 2
+    assert changes[0]['previous'] == 'Факты' and changes[0]['section'] == 'Факты'
+
+
+def test_repeated_section_template_does_not_fail_run_or_create_manual_problem(settings, store):
+    settings.wiki_write = True
+    configure(store, DATES)
+    wiki = MaintenanceWiki(['{{Факты|дата=2017-05-30}}',
+                            '{{Факты|дата=2017-05-30}}\n{{проверить факты}}'])
+    MaintenanceWorker(settings, store, DATES, wiki).execute(queued(store, DATES))
+    run = store.list_runs(processor=DATES)[0]
+    summary = json.loads(run['summary'])
+    assert run['status'] == 'success' and summary['errors'] == 0 and summary['changed'] == 1
+    assert report(store, DATES)['problems'] == 0 and report(store, DATES)['to_process'] == 0
+    assert '{{Факты|дата=2017-05-30}}' in wiki.edits[0][1]
+    assert '{{проверить факты|дата=2020-01-01}}' in wiki.edits[0][1]
 
 
 def test_rq_preserves_unknown_parameters_topic_and_nested_content():
