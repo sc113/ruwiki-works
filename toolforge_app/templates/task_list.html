@@ -3,7 +3,7 @@
 <div class="task-groups {{ 'has-admin-controls' if is_admin }}" aria-label="Все задачи">
 {% for group in overview.groups %}
   <section class="task-group" aria-labelledby="group-{{ group.spec.slug }}">
-    <div class="task-group-heading"><h2 id="group-{{ group.spec.slug }}">{% if group.spec.link_slug %}<a href="{{ url_for('processor', slug=group.spec.link_slug) }}">{% endif %}{{ icon(group.spec.slug) }}{{ group.spec.title }}{% if group.spec.link_slug %}</a>{% endif %}</h2><span class="muted-value">{{ group.cards|length }} {{ 'задачи' if not group.spec.link_slug else 'действие' if group.cards|length == 1 else 'действия' }}</span></div>
+    <div class="task-group-heading"><h2 id="group-{{ group.spec.slug }}"><a href="{{ url_for('processor', slug=group.spec.link_slug) }}">{{ icon(group.spec.slug) }}{{ group.spec.title }}</a></h2><span class="muted-value">{{ group.cards|length }} {{ 'действие' if group.cards|length == 1 else 'действия' }}</span></div>
     {% for card in group.cards %}
     <article class="action-row {{ 'unconnected' if not card.enabled }}" aria-label="{{ card.display_title }}">
       <div class="action-subject">

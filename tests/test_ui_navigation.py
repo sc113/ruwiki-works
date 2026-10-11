@@ -9,7 +9,7 @@ from toolforge_app.overview import build_overview
 from test_web import set_session
 
 
-def test_discussions_share_group_but_keep_distinct_pages_and_admin_controls(settings, store):
+def test_discussions_use_one_menu_entry_and_two_action_tabs(settings, store):
     overview = build_overview(settings, store)
     group = overview['groups'][0]
     assert group['spec'].slug == 'discussions'
@@ -22,19 +22,50 @@ def test_discussions_share_group_but_keep_distinct_pages_and_admin_controls(sett
     home = client.get('/').get_data(as_text=True)
     section = home.split('aria-labelledby="group-discussions"', 1)[1].split('</section>', 1)[0]
     assert '/tasks/obkat' in section and '/tasks/projects' in section
-    assert '2 задачи' in section and 'Поиск каждые 12 ч' in section
-    assert '/processors/discussions' not in home
+    assert '2 действия' in section and 'Поиск каждые 12 ч' in section
+    assert 'href="/processors/discussions"' in section
     for slug, title in [('obkat', 'Категории'), ('projects', 'Проекты')]:
-        html = client.get('/processors/' + slug).get_data(as_text=True)
-        navigation = html.split('class="processor-group-links"', 1)[1].split('</nav>', 1)[0]
-        assert f'href="/processors/{slug}" class="processor-link selected"' in navigation
-        assert f'<span>{title}</span>' in navigation
-        mobile_group = html.split('<optgroup label="Обсуждения и номинации">', 1)[1].split('</optgroup>', 1)[0]
-        assert 'value="/processors/obkat"' in mobile_group and 'value="/processors/projects"' in mobile_group
+        html = client.get('/processors/discussions?task=' + slug).get_data(as_text=True)
+        assert '<h1>Обсуждения и номинации</h1>' in html
+        navigation = html.split('<nav aria-label="Задачи бота"', 1)[1].split('</nav>', 1)[0]
+        assert 'href="/processors/discussions" class="processor-link selected"' in navigation
+        assert '/processors/obkat' not in navigation and '/processors/projects' not in navigation
+        assert 'processor-group' not in navigation
+        tabs = html.split('<nav class="action-tabs"', 1)[1].split('</nav>', 1)[0]
+        assert f'class="active" href="/processors/discussions?task={slug}"' in tabs
+        assert '>Категории</a>' in tabs and '>Проекты</a>' in tabs
+        mobile = html.split('<select data-section-nav', 1)[1].split('</select>', 1)[0]
+        assert 'value="/processors/discussions" selected' in mobile and '<optgroup' not in mobile
+        assert f'<input type="hidden" name="task" value="{slug}">' in html
+        assert f'data-refresh-url="/tasks/{slug}/status-fragment"' in html
+        assert client.get('/processors/' + slug).status_code == 200
     set_session(client, settings.admin_username)
     admin = client.get('/').get_data(as_text=True)
     section = admin.split('aria-labelledby="group-discussions"', 1)[1].split('</section>', 1)[0]
     assert '/admin/tasks/obkat/control' in section and '/admin/tasks/projects/control' in section
+
+
+def test_discussion_tabs_keep_logs_settings_and_control_separate(settings, store):
+    runs = {}
+    for slug in ['obkat', 'projects']:
+        runs[slug] = store.start_run('full', processor=slug)
+        store.finish_run(runs[slug], [], {}, {})
+    client = create_app(settings, store).test_client()
+    assert client.get('/processors/discussions').status_code == 200
+    for slug, other in [('obkat', 'projects'), ('projects', 'obkat')]:
+        html = client.get('/processors/discussions?task=' + slug + '&view=logs').get_data(as_text=True)
+        assert '/runs/' + runs[slug] in html and '/runs/' + runs[other] not in html
+        redirect = client.get('/tasks/' + slug)
+        assert redirect.location.endswith('/processors/discussions?task=' + slug)
+    assert client.get('/processors/discussions?task=maintenance-rq').status_code == 404
+    set_session(client, settings.admin_username)
+    for slug, other in [('obkat', 'projects'), ('projects', 'obkat')]:
+        html = client.get('/processors/discussions?task=' + slug).get_data(as_text=True)
+        assert f'/admin/tasks/{slug}/schedule' in html and f'/admin/tasks/{other}/schedule' not in html
+    response = client.post('/admin/tasks/projects/control', data={
+        'csrf': 'csrf-test', 'action': 'pause', 'return_to': 'processor'})
+    assert response.location.endswith('/processors/discussions?task=projects')
+    assert store.control('projects')['mode'] == 'paused' and store.control('obkat')['mode'] == 'active'
 
 
 def populate(store, slug, count=45):

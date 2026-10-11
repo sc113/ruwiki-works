@@ -20,6 +20,9 @@ PROCESSORS = (
     Processor("projects", "Обсуждение проектов", "Проекты", "Завершённые обсуждения, закрытые годы и оформление номинаций", True, "Проекты"),
 )
 
+DISCUSSIONS = Processor("discussions", "Обсуждения и номинации", "Обсуждения",
+                        "Зачёркивание завершённых номинаций и оформление обсуждений", True)
+
 
 @dataclass(frozen=True)
 class ProcessorGroup:
@@ -29,7 +32,7 @@ class ProcessorGroup:
 
     @property
     def link_slug(self):
-        return self.processors[0] if len(self.processors) == 1 else None
+        return self.slug
 
 
 PROCESSOR_GROUPS = (
@@ -67,6 +70,8 @@ TASKS = (
 
 
 def get_processor(slug):
+    if slug == DISCUSSIONS.slug:
+        return DISCUSSIONS
     return next((p for p in PROCESSORS if p.slug == slug), None)
 
 

@@ -57,6 +57,13 @@ def create_app(settings=None, store=None, *, admin_preview=False):
     app.extensions["store"] = store
     app.extensions["settings"] = settings
 
+    @app.url_defaults
+    def discussion_urls(endpoint, values):
+        # Keep task identifiers for workers and exports; use one public section.
+        if endpoint == 'processor' and values.get('slug') in {'obkat', 'projects'}:
+            values.setdefault('task', values['slug'])
+            values['slug'] = 'discussions'
+
     def preview_enabled():
         return admin_preview and request.remote_addr in {"127.0.0.1", "::1"}
 
@@ -458,6 +465,12 @@ def create_app(settings=None, store=None, *, admin_preview=False):
 
     @app.route("/processors/<slug>")
     def processor(slug):
+        section_module = None
+        if slug in {'discussions', 'obkat', 'projects'}:
+            section_module = get_processor('discussions')
+            slug = request.args.get('task', 'obkat' if slug == 'discussions' else slug)
+            if slug not in {'obkat', 'projects'}:
+                abort(404)
         module = get_processor(slug)
         if not module:
             abort(404)
@@ -539,7 +552,9 @@ def create_app(settings=None, store=None, *, admin_preview=False):
                 item["fix"] = item.get('fix') or fix_guidance(item)
                 item["subject"] = plain_title(item.get("parent_title") or item["display_title"])
                 item["context"] = "Раздел: " + item["display_title"] if item.get("parent_title") else item["detail"]
-        return render_template("processor.html", module=module, active=active, report=report,
+        return render_template("processor.html", module=module, section_module=section_module,
+            actions=[action for action in TASKS if action.slug in {'obkat', 'projects'}],
+            active=active, report=report,
             items=items if active == "open" else items[(page_number - 1) * 40:page_number * 40], total=total, query=query, kind=kind, month=month,
             available_types=available_types, available_months=available_months, history=history[:25],
             page_number=page_number, has_next=active in {'problems', 'pending'} and total > page_number * 40,

@@ -24,7 +24,7 @@ def test_shared_editor_saves_both_obkat_timers_and_public_values(settings, store
     set_session(client, 'admin')
     response = client.post('/admin/tasks/obkat/schedule', data={
         'csrf': 'csrf-test', 'quiet_minutes': '35', 'month_end_time': '22:15'})
-    assert response.location.endswith('/processors/obkat')
+    assert response.location.endswith('/processors/discussions?task=obkat')
     assert get_schedule(settings, store, 'obkat') == {'quiet_minutes': 35, 'month_end_time': '22:15', 'search_minutes': 5}
     assert store.get_state('obkat:config')['other'] == 'preserved'
     html = client.get(response.location).get_data(as_text=True)
@@ -79,7 +79,7 @@ def test_shared_schedule_csrf_and_local_preview(settings, store):
         session['admin_preview'] = True
     response = client.post('/admin/tasks/obkat/schedule', data={
         'csrf': 'csrf-test', 'quiet_minutes': '35', 'month_end_time': '22:15'})
-    assert response.location.endswith('/processors/obkat')
+    assert response.location.endswith('/processors/discussions?task=obkat')
     assert store.get_state('obkat:config') is None
 
 

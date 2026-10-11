@@ -1,10 +1,11 @@
 {% from 'icons.html' import icon %}
+{% set display_module = section_module|default(module, true) %}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}{{ module.short_title }}{% endblock %} · ruwiki works</title>
+  <title>{% block title %}{{ display_module.short_title }}{% endblock %} · ruwiki works</title>
   <meta name="color-scheme" content="dark">
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
@@ -18,19 +19,16 @@
     <div class="nav-label">ЗАДАЧИ БОТА</div>
     <nav aria-label="Задачи бота" class="processor-nav">
       {% for group in navigation_groups %}
-      {% if not group.spec.link_slug %}<div class="processor-nav-group" role="group" aria-label="{{ group.spec.title }}"><a class="processor-group-label" href="{{ url_for('index') }}#group-{{ group.spec.slug }}">{{ icon(group.spec.slug, 'nav-symbol') }}<span>{{ group.spec.title }}</span></a><div class="processor-group-links">{% endif %}
-      {% for p in group.processors %}
-      <a href="{{ url_for('processor', slug=p.slug) }}" class="processor-link {% if p.slug == module.slug %}selected{% endif %}" {% if p.slug == module.slug %}aria-current="page"{% endif %}>
-        {{ icon(p.slug, 'nav-symbol') }}
-        <span>{{ p.nav_title or p.title }}</span>
+      {% set selected = module.slug in group.spec.processors or module.slug == group.spec.slug %}
+      <a href="{{ url_for('processor', slug=group.spec.link_slug) }}" class="processor-link {% if selected %}selected{% endif %}" {% if selected %}aria-current="page"{% endif %}>
+        {{ icon(group.spec.slug, 'nav-symbol') }}
+        <span>{{ group.spec.title }}</span>
       </a>
-      {% endfor %}
-      {% if not group.spec.link_slug %}</div></div>{% endif %}
       {% endfor %}
     </nav>
     <label class="compact-nav"><span class="sr-only">Перейти в раздел</span><select data-section-nav aria-label="Текущий раздел">
       <option value="{{ url_for('index') }}" {% if module.slug == 'overview' and request.endpoint != 'notifications_page' %}selected{% endif %}>Обзор</option>
-      {% for group in navigation_groups %}{% if not group.spec.link_slug %}<optgroup label="{{ group.spec.title }}">{% endif %}{% for p in group.processors %}<option value="{{ url_for('processor', slug=p.slug) }}" {% if p.slug == module.slug %}selected{% endif %}>{{ p.nav_title or p.title }}</option>{% endfor %}{% if not group.spec.link_slug %}</optgroup>{% endif %}{% endfor %}
+      {% for group in navigation_groups %}<option value="{{ url_for('processor', slug=group.spec.link_slug) }}" {% if module.slug in group.spec.processors or module.slug == group.spec.slug %}selected{% endif %}>{{ group.spec.title }}</option>{% endfor %}
       <option value="{{ url_for('run_history_page') }}" {% if module.slug == 'activity' %}selected{% endif %}>Выполнение и логи</option>
       <option value="{{ url_for('statistics_page') }}" {% if module.slug == 'statistics' %}selected{% endif %}>Статистика</option>
       {% if is_admin %}<option value="{{ url_for('notifications_page') }}" {% if request.endpoint == 'notifications_page' %}selected{% endif %}>Уведомления</option>{% endif %}
@@ -38,7 +36,7 @@
   </aside>
   <div class="workspace">
     <header class="topbar">
-      <div class="breadcrumb">Задачи бота <span>/</span> <strong>{{ module.nav_title or module.short_title }}</strong></div>
+      <div class="breadcrumb">Задачи бота <span>/</span> <strong>{{ display_module.short_title }}</strong></div>
       <div class="account">
       <a class="console-link {% if module.slug == 'activity' %}current{% endif %}" href="{{ url_for('run_history_page') }}" {% if module.slug == 'activity' %}aria-current="page"{% endif %}>{{ icon('console') }}Выполнение и логи</a>
       <a class="console-link {% if module.slug == 'statistics' %}current{% endif %}" href="{{ url_for('statistics_page') }}" {% if module.slug == 'statistics' %}aria-current="page"{% endif %}>{{ icon('statistics') }}Статистика</a>

@@ -220,26 +220,6 @@ dd {
   display: grid;
   gap: 4px;
 }
-.processor-group-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px 6px;
-  color: var(--accent-dark);
-  font-size: 14px;
-  line-height: 1.4;
-}
-.processor-group-links {
-  display: grid;
-  gap: 3px;
-  margin: 3px 0 9px 21px;
-  padding-left: 8px;
-  border-left: 1px solid var(--line);
-}
-.processor-group-links .processor-link {
-  min-height: 40px;
-  padding: 8px 10px;
-}
 .processor-link {
   display: flex;
   align-items: center;
