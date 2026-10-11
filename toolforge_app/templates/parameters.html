@@ -11,7 +11,7 @@
   {% else %}
     <dl class="public-parameters">
       {% if module.slug in ['maintenance', 'translations', 'sections', 'categories', 'projects'] %}
-      <div><dt>{{ 'Поиск обсуждений' if module.slug == 'projects' else 'Поиск статей' if module.slug == 'sections' else 'Проверка категорий' }}</dt><dd>{{ task_state.schedule.search_minutes|search_frequency }}</dd></div>
+      <div><dt>{{ 'Поиск обсуждений' if module.slug == 'projects' else 'Поиск статей' if module.slug == 'sections' else 'Проверка категорий' }}</dt><dd>{{ task_state.schedule|search_schedule }}</dd></div>
       <div class="wide"><dt>Источник</dt><dd>
         {% if module.slug == 'sections' %}
           {% set main_source = report.sources|first if report.sources else report.source %}

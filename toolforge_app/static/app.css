@@ -2172,6 +2172,7 @@ select {
 .journal-line.run-line { grid-template-columns: 181px 18px minmax(0, 1fr); }
 .journal-waiting { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 10px 16px; color: var(--muted); font-size: 14px; border-bottom: 1px solid var(--line); }
 .launch-state { padding: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.launch-state > a { display: inline-block; margin-inline-start: .75rem; }
 .launch-state p { margin: 10px 0 0; color: var(--muted); }
 .run-feed > .run-counts { margin: 10px 0 18px; }
 .profile-menu { position: relative; }
@@ -2216,3 +2217,5 @@ select {
   .statistics-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .statistics-table th, .statistics-table td { padding: 8px 10px; }
 }
+
+.schedule-input input.clock-list-input { width: 10rem; min-width: 10rem; }

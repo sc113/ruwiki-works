@@ -132,24 +132,7 @@ def format_discussion(text, spacing=False):
 
 
 def edit_comment(before, after):
-    parts = []
-    def struck_count(text):
-        return sum(header['struck'] for header in parse_headers(visible_text(text).split('\n')))
-    def navigation_markup(text):
-        masked = visible_text(text)
-        wrapped = list(WRAPPED_NAV.finditer(masked))
-        return [match[0] for match in wrapped] + [match[0] for match in BARE_NAV.finditer(masked)
-                if not any(wrapper.start() <= match.start() < wrapper.end() for wrapper in wrapped)]
-    if struck_count(after) > struck_count(before):
-        parts.append('зачёркивание завершённых обсуждений')
-    if declared_closed(after) != declared_closed(before):
-        parts.append('отметка закрытого года в [[ш:ОБПРО-Навигация]]')
-    elif navigation_markup(after) != navigation_markup(before):
-        parts.append('оформление [[ш:ОБПРО-Навигация]]')
-    without_spacing, _, _ = format_discussion(before, spacing=False)
-    if after != without_spacing:
-        parts.append('форматирование заголовков и пустых строк')
-    return ', '.join(parts) or 'оформление обсуждений'
+    return 'Зачёркивание завершённых обсуждений, форматирование.'
 
 
 def page_report(base, checked_at, *, spacing=False, excluded=False):

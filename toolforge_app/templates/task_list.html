@@ -26,7 +26,7 @@
       </div>
       <div class="action-schedule">
         <span class="schedule-primary">{% if card.task.slug == 'obkat' %}Через {{ card.schedule.quiet_minutes }} мин после правки{% elif 'weekly' in card.task.schedules %}{{ ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'][card.schedule.weekday] }} · {{ card.schedule.run_time }} МСК{% else %}Ежедневно · {{ card.schedule.run_time }} МСК{% endif %}</span>
-        <span class="action-search {{ 'is-online' if card.search_online }}">Поиск {{ card.schedule.search_minutes|search_frequency|lower }}</span>
+        <span class="action-search {{ 'is-online' if card.search_online }}">Поиск {{ card.schedule|search_schedule if card.schedule.search_times else card.schedule|search_schedule|lower }}</span>
         {% if card.enabled and not card.search_online %}<span class="action-search-alert">{{ card.search_status }}</span>{% endif %}
         {% if card.task.slug in system_health.stale %}<span class="stale-data">Данные устарели</span>{% endif %}
       </div>

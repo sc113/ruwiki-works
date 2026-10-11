@@ -2,7 +2,7 @@
 import time
 
 from .processors import TASKS
-from .schedules import get_schedule, previous_task_time
+from .schedules import search_interval, previous_task_time
 from .runtime import service_enabled
 
 
@@ -55,10 +55,10 @@ def system_status(settings, store, now=None):
             continue
         if task.slug == 'obkat':
             checked = store.get_state('last_poll', 0)
-            max_age = get_schedule(settings, store, task.slug)['search_minutes'] * 60 + 300
+            max_age = search_interval(settings, store, task.slug) + 300
         else:
             checked = store.get_state(task.slug + ':inventory', {}).get('checked_at', 0)
-            max_age = get_schedule(settings, store, task.slug)['search_minutes'] * 60 + 3600
+            max_age = search_interval(settings, store, task.slug) + 3600
         started = 0
         if not checked:
             # Newly enabled tasks may appear while the common monitor has been

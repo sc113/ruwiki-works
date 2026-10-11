@@ -189,6 +189,12 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             return f'Каждые {hours} ч' if hours != 1 else 'Каждый час'
         return f'Каждые {minutes} мин' if minutes != 1 else 'Каждую минуту'
 
+    @app.template_filter('search_schedule')
+    def search_schedule(schedule):
+        if schedule.get('search_times'):
+            return schedule['search_times'].replace(', ', ' и ') + ' МСК'
+        return search_frequency(schedule.get('search_minutes'))
+
     @app.template_filter('filesize')
     def filesize(value):
         value = float(value or 0)
