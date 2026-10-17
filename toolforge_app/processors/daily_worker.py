@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from ..execution import execution_slot, ready_jobs
 from ..schedules import get_schedule, next_daily_time, next_weekly_time, next_month_end_time
 from . import get_task
-from ..wiki import WikiClient
+from ..wiki import WikiClient, error_message
 from ..runtime import execution_settings, job_enabled
 
 MOSCOW = ZoneInfo("Europe/Moscow")
@@ -28,6 +28,7 @@ class DailyWorker:
         self.events, self.run_id = [], None
         self.active_job = None
         self.wiki.request_guard = self.checkpoint
+        self.wiki.event = self.event
 
     def checkpoint(self):
         self.renew()
@@ -39,6 +40,8 @@ class DailyWorker:
 
 
     def event(self, code, message, title="", **details):
+        if code == 'error':
+            message = error_message(details.get('error'), message)
         self.events.append(dict(at=time.time(), code=code, message=message, title=title, **details))
         if self.run_id:
             self.store.update_progress(self.run_id, self.events)

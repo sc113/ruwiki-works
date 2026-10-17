@@ -6,6 +6,7 @@ from .processors import TASKS, Processor, get_processor, get_task
 from .processors.logs import public_run
 from .run_statistics import public_summary
 from .execution import ready_jobs
+from .wiki import error_message
 
 
 ACTIVITY = Processor("activity", "Выполнение и логи", "Выполнение и логи", "Запуски задач и журнал выполнения", True)
@@ -93,7 +94,8 @@ def console_data(store, selected="", *, full=True, page=1, started_from=None, st
                 if started_from is not None and event['at'] < started_from or started_until is not None and event['at'] >= started_until:
                     continue
                 details = any(key not in {'at', 'code', 'message', 'title', 'error'} for key in event)
-                events.append(dict(at=event['at'], code=event['code'], message=event['message'],
+                message = error_message(event.get('error'), event['message']) if event['code'] == 'error' else event['message']
+                events.append(dict(at=event['at'], code=event['code'], message=message,
                     title=event.get('title', ''), error=event.get('error'), run_id=run['id'], task=task, index=index,
                     tone=event.get('tone', 'error' if event['code'] == 'error' else 'success' if event['code'] in {'edited', 'table_edited'} else 'neutral'),
                     details=bool(full and details)))

@@ -31,7 +31,7 @@ from .health import system_status, component_health
 from .connections import (ERRORS as CONNECTION_ERRORS, FIELDS as CONNECTION_FIELDS, RIGHTS,
                           connection_summary, effective_settings, probe_bot, probe_oauth,
                           record_check, save_credentials)
-from .wiki import WikiError
+from .wiki import WikiError, error_message
 from .runtime import execution_settings, service_enabled, writes_enabled
 from .run_status import STATUS_LABELS
 from .statistics import statistics
@@ -136,6 +136,9 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             abort(404)
         for field in ("events", "summary", "report"):
             run[field] = json.loads(run[field])
+        for event in run['events']:
+            if event['code'] == 'error':
+                event['message'] = error_message(event.get('error'), event['message'])
         return run if full_logs() else public_run(run)
 
     @app.before_request

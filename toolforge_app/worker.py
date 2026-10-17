@@ -13,7 +13,7 @@ from .storage import dump
 from .execution import execution_slot, ready_jobs
 from .schedules import after_edit_due, get_schedule, month_end_deadline, search_interval
 from .run_statistics import report_changes, report_snapshot
-from .wiki import RUN_ERRORS, WikiClient, WikiError, bot_may_edit
+from .wiki import RUN_ERRORS, WikiClient, WikiError, bot_may_edit, error_message
 from .runtime import execution_settings, service_enabled, job_enabled
 
 
@@ -34,10 +34,13 @@ class Worker:
         self.execution_generation = None
         if isinstance(self.wiki, WikiClient):
             self.wiki.request_guard = self.check_control
+            self.wiki.event = self.event
         self.renew = lambda: None
         self.outer_renew = lambda: None
 
     def event(self, code, message, title="", **details):
+        if code == 'error':
+            message = error_message(details.get('error'), message)
         self.events.append(dict(at=time.time(), code=code, message=message, title=title, **details))
         if self.run_id:
             self.store.update_progress(self.run_id, self.events)

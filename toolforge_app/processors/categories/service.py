@@ -3,7 +3,7 @@ import copy
 import json
 import time
 
-from ...wiki import RUN_ERRORS, WikiClient, WikiError, require_bot_permission
+from ...wiki import RUN_ERRORS, WikiClient, WikiError, require_bot_permission, error_message
 from ...run_statistics import report_changes, report_snapshot
 from ...schedules import search_interval
 from ..daily_worker import DailyWorker, Controlled
@@ -33,6 +33,8 @@ class CategoryWorker(DailyWorker):
         self.last_progress_at = 0
 
     def event(self, code, message, title='', **details):
+        if code == 'error':
+            message = error_message(details.get('error'), message)
         self.events.append(dict(at=time.time(), code=code, message=message, title=title, **details))
         # A first pass may verify thousands of pages. Batch progress writes while
         # retaining every diagnostic event, and immediately publish saved edits/errors.

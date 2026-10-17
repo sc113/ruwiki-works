@@ -2,6 +2,7 @@
 import copy
 
 from ..run_statistics import public_summary
+from ..wiki import AUTH_ERRORS, error_message
 
 START_CODES = {'article', 'page'}
 RESULTS = {
@@ -43,7 +44,11 @@ def public_run(run):
         if code not in RESULTS:
             continue
         tone, message = RESULTS[code]
+        if code == 'error':
+            message = error_message(event.get('error'), message)
         projected = dict(at=event['at'], code=code, title=title, message=message, tone=tone)
+        if code == 'error' and event.get('error') in AUTH_ERRORS:
+            projected['failure_kind'] = 'authentication'
         if code in {'edited', 'table_edited'} and type(event.get('revision')) is int:
             projected['revision'] = event['revision']
         if code in {'edited', 'table_edited'}:

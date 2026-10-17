@@ -27,6 +27,19 @@ RUN_ERRORS = frozenset({
     "notloggedin", "blocked", "autoblocked", "permissiondenied", "writeapidenied",
 })
 
+# These responses explicitly reject the edit before saving. Never retry an
+# ambiguous network outcome, a rights failure or an unexpected account.
+SESSION_ERRORS = frozenset({'assertuserfailed', 'assertnameduserfailed', 'notloggedin', 'badtoken'})
+AUTH_ERRORS = SESSION_ERRORS | {'login-failed', 'unexpected-bot-identity', 'assertbotfailed',
+                                'credentials-missing', 'credentials-unreadable'}
+
+
+def error_message(code, fallback):
+    if code in AUTH_ERRORS:
+        return 'Сбой авторизации бота; правка не сохранена'
+    return fallback
+
+
 IN_USE_TEMPLATES = frozenset({'редактирую', 'пишу', 'l', 'wip', 'in use'})
 
 
@@ -58,6 +71,7 @@ class WikiClient:
         self.logged_in = False
         self.last_edit_at = 0.0
         self.request_guard = lambda: None
+        self.event = lambda *args, **kwargs: None
         self.api_backoff = {}
 
     def _wait_until(self, deadline):
@@ -354,20 +368,34 @@ class WikiClient:
 
     def _save(self, base, text, summary, *, minor, create=False):
         require_bot_permission(base.text, self.settings.bot_username)
-        self.login()
-        token = self.request({"action": "query", "meta": "tokens"})["query"]["tokens"]["csrftoken"]
         params = {"action": "edit", "title": base.title, "text": text,
-            "summary": fit_comment(summary), "token": token, "starttimestamp": timestamp(time.time()),
+            "summary": fit_comment(summary), "starttimestamp": timestamp(time.time()),
             "assert": "user", "assertuser": self.settings.bot_username, "bot": 1,
             "minor" if minor else "notminor": 1, "watchlist": "nochange"}
         if create:
             params['createonly'] = 1
         else:
             params.update(nocreate=1, baserevid=base.revision, basetimestamp=timestamp(base.edited_at))
-        data = self.request(params, post=True)
+        for attempt in range(2):
+            try:
+                self.login()
+                token = self.request({"action": "query", "meta": "tokens"})["query"]["tokens"]["csrftoken"]
+                # Keep the original revision/create-only guard on the retry:
+                # an intervening human edit must still cause a conflict.
+                data = self.request({**params, 'token': token}, post=True)
+                break
+            except WikiError as exc:
+                if attempt or exc.code not in SESSION_ERRORS:
+                    raise
+                self.event('auth_retry', 'Сессия бота потеряна; повторный вход и одна попытка сохранения',
+                           title=base.title, error=exc.code)
+                self.logged_in = False
+                self.session.cookies.clear()
         edit = data.get("edit", {})
         if edit.get("result") != "Success":
             raise WikiError("captcha" if "captcha" in edit else "edit-failed")
+        if attempt:
+            self.event('auth_recovered', 'Повторный вход помог; правка успешно сохранена', title=base.title)
         return edit.get("newrevid", base.revision)
 
 
