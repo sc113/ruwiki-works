@@ -502,13 +502,13 @@ def create_app(settings=None, store=None, *, admin_preview=False):
                 run["summary"] = json.loads(run["summary"])
             config = get_config(store, task_slug)
             report = task_state["report"]
-            active = request.args.get("view", "problems" if report["problems"] else "pending")
-            views = {'problems', 'pending', 'logs'}
+            active = request.args.get("view", "problems" if report["problems"] else "temporary" if report.get("temporary") and not report["to_process"] else "pending")
+            views = {'problems', 'pending', 'temporary', 'logs'}
             if slug in {'translations', 'sections'}:
                 views.add('skipped')
             if active not in views:
                 abort(404)
-            result_items = report["pending_articles"] if active == "pending" else report["skipped_articles"] if active == "skipped" else report["manual"]
+            result_items = report["pending_articles"] if active == "pending" else report["skipped_articles"] if active == "skipped" else report.get("temporary_articles", []) if active == "temporary" else report["manual"]
             items = result_items[(page_number - 1) * 40:page_number * 40]
             has_next = len(result_items) > page_number * 40
             query = request.args.get('q', '').strip()[:255]

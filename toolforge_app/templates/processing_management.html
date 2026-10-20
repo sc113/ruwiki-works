@@ -7,6 +7,7 @@
         <a class="queue-metric" href="{{ url_for('processor', slug=task_state.processor.slug, task=task.slug, view='pending') }}#reports">{{ icon('queue') }}К обработке <strong>{{ report.to_process if report.to_process is not none else '—' }}</strong></a>
         {% if task_state.processor.slug in ['translations', 'sections'] %}<a class="source-link" href="{{ url_for('processor', slug=task_state.processor.slug, task=task.slug, view='skipped') }}#reports">Пропущено {{ report.skipped }}</a>
         {% else %}<a class="source-link" href="{{ wiki_url(report.source) }}" target="_blank" rel="noopener">{{ 'Обсуждения' if task_state.processor.slug == 'projects' else 'Форматы' if task_state.processor.slug == 'categories' else 'Категория' }} ↗</a>{% endif %}
+      {% if report.temporary %}<a class="source-link" href="{{ url_for('processor', slug=task_state.processor.slug, task=task.slug, view='temporary') }}#reports">Временные пропуски {{ report.temporary }}</a>{% endif %}
       {% else %}
         <a class="queue-metric" href="#queue">{{ icon('queue') }}Очередь обработки <strong>{{ queue|length }}</strong></a>
       {% endif %}

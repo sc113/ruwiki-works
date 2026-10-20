@@ -133,13 +133,12 @@ def test_sections_have_distinct_dates_and_heading_templates_are_ignored():
     assert transform(wiki)[0] == updated
 
 
-def test_section_rename_is_matched_but_two_similar_headings_are_ambiguous():
+def test_section_rename_is_matched_and_exact_heading_wins_over_similar_sibling():
     wiki = MaintenanceWiki(['== История развития ==\n{{Факты}}', '== История развития города ==\n{{Факты}}'])
     assert transform(wiki, section_templates=['Факты'])[1][0]['date'] == '2020-01-01'
     wiki = MaintenanceWiki(['== История города ==\n{{Факты}}\n== История городов ==\n{{Факты}}',
                             '== История города ==\n{{Факты}}'])
-    with pytest.raises(WikiError, match='ambiguous-section-history'):
-        transform(wiki, section_templates=['Факты'])
+    assert transform(wiki, section_templates=['Факты'])[1][0]['date'] == '2020-01-01'
 
 
 def test_revision_limit_prevents_guessed_dates():
@@ -307,13 +306,14 @@ def test_dry_run_has_full_proposals_but_no_fake_cleanup_errors(settings, store, 
     assert store.get_state(DATES + ':result')['verification'] is False
 
 
-def test_article_error_is_public_manual_issue_with_no_save(settings, store):
+def test_edit_conflict_is_public_temporary_skip_with_no_save(settings, store):
     settings.wiki_write = True
     configure(store, DATES)
     wiki = MaintenanceWiki(['Текст', '{{проверить факты}}'])
     wiki.conflict = True
     MaintenanceWorker(settings, store, DATES, wiki).execute(queued(store, DATES))
-    assert not wiki.edits and report(store, DATES)['problems'] == 1
+    assert not wiki.edits and report(store, DATES)['problems'] == 0
+    assert report(store, DATES)['temporary'] == 1
     assert any(e.get('error') == 'editconflict' for e in json.loads(store.list_runs(processor=DATES)[0]['events']))
 
 
@@ -586,3 +586,21 @@ def test_crashed_pass_waits_until_next_daily_run(settings, store):
     assert len(store.list_runs(processor=DATES)) == 1
     assert not wiki.calls and len(store.queue(DATES)) == 1
     assert store.queue(DATES)[0]['kind'] == 'daily' and store.queue(DATES)[0]['due_at'] > time.time()
+
+
+@pytest.mark.parametrize('mode', [1, 2, 3])
+def test_similar_existing_siblings_do_not_share_template_history(mode):
+    wiki = MaintenanceWiki([
+        '== Фильмография ==\nТекст\n== Дискография ==\nТекст\n== Библиография ==\nТекст',
+        '== Фильмография ==\n{{Факты}}\n== Дискография ==\n{{Факты}}\n== Библиография ==\nТекст',
+        '== Фильмография ==\n{{Факты}}\n== Дискография ==\n{{Факты}}\n== Библиография ==\n{{Факты}}'])
+    _, changes, notes = transform(wiki, section_templates=['Факты'], search_mode=mode)
+    assert not notes
+    assert [(c['section'], c['revision']) for c in changes] == [('Фильмография', 2), ('Дискография', 2), ('Библиография', 3)]
+
+
+def test_truly_ambiguous_rename_is_still_rejected():
+    wiki = MaintenanceWiki(['== История города ==\n{{Факты}}\n== История городов ==\n{{Факты}}',
+                            '== История город ==\n{{Факты}}'])
+    with pytest.raises(WikiError, match='ambiguous-section-history'):
+        transform(wiki, section_templates=['Факты'])

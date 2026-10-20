@@ -16,6 +16,7 @@ from .history import History, normalize
 from .inventory import Catalogue, ERROR_LABELS, load_sections, refresh_inventory, report, source_category
 from .transform import clean_value, update_dates, update_rq
 from .unwrap import unwrap_rq
+from ..temporary import CODES as TEMPORARY_CODES, LABELS as TEMPORARY_LABELS
 
 
 
@@ -40,7 +41,7 @@ class MaintenanceWorker(DailyWorker):
         self.run_id = self.store.start_run(job["kind"], job["requested_by"], dry_run=dry_run, processor=self.slug, job=job)
         summary = dict(checked=0, changed=0, proposed=0, skipped=0, errors=0, remaining=None)
         before_report = report_snapshot(report(self.store, self.slug, config))
-        errors, unresolved, excluded, notes_by_title = {}, {}, {}, {}
+        errors, unresolved, excluded, temporary, notes_by_title = {}, {}, {}, {}, {}
         controlled, failed = None, False
         result_report = {}
         try:
@@ -128,6 +129,12 @@ class MaintenanceWorker(DailyWorker):
                     self.event(code, message, title=title, changes=changes, revision=revision,
                                diff_before=base.text, diff_after=text)
                 except WikiError as exc:
+                    if exc.code in TEMPORARY_CODES:
+                        temporary[title] = dict(title=title, outcome=exc.code, reason=TEMPORARY_LABELS[exc.code])
+                        summary['skipped'] += 1
+                        summary['temporary_skipped'] = summary.get('temporary_skipped', 0) + 1
+                        self.event('temporary_skip', TEMPORARY_LABELS[exc.code], title=title, error=exc.code)
+                        continue
                     if exc.code == 'bot-excluded':
                         excluded[title] = ERROR_LABELS[exc.code]
                         summary['skipped'] += 1
@@ -148,8 +155,11 @@ class MaintenanceWorker(DailyWorker):
                 for title in sorted(set(after['articles']) - selected):
                     self.checkpoint()
                     try:
-                        if bot_edit_block(self.wiki.fetch(title).text, self.settings.bot_username) == 'bot-excluded':
+                        block = bot_edit_block(self.wiki.fetch(title).text, self.settings.bot_username)
+                        if block == 'bot-excluded':
                             excluded[title] = ERROR_LABELS['bot-excluded']
+                        elif block in TEMPORARY_CODES:
+                            temporary[title] = dict(title=title, outcome=block, reason=TEMPORARY_LABELS[block])
                     except WikiError as exc:
                         if exc.code in RUN_ERRORS:
                             raise
@@ -169,11 +179,13 @@ class MaintenanceWorker(DailyWorker):
                 candidates.update({title: '; '.join(notes) for title, notes in notes_by_title.items() if notes})
                 candidates.update(errors)
             manual = [dict(title=title, reason=reason) for title, reason in sorted(candidates.items())
-                      if title in after['articles'] and title not in excluded]
+                      if title in after['articles'] and title not in excluded and title not in temporary]
             exclusions = [dict(title=title, reason=reason) for title, reason in sorted(excluded.items())
                           if title in after['articles']]
             self.store.set_state(self.slug + ':result', dict(source=source_category(self.slug, config),
-                at=time.time(), manual=manual, excluded=exclusions, verification=not dry_run, run_id=self.run_id))
+                at=time.time(), manual=manual, excluded=exclusions,
+                temporary=[item for title, item in sorted(temporary.items()) if title in after['articles']],
+                verification=not dry_run, run_id=self.run_id))
             manual_titles = {item['title'] for item in manual}
             for event in self.events:
                 if event['code'] == 'unchanged' and event.get('title') in manual_titles:

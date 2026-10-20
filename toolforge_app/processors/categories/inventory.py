@@ -163,7 +163,7 @@ def is_checked(entry):
     return bool(entry and entry['outcome'] in {'ok', 'edited', 'bot-excluded'})
 
 
-def report(store, slug, config=None):
+def _report(store, slug, config=None):
     config = config or get_config(store, slug)
     inv = store.get_state(slug + ':inventory', {})
     if inv.get('selection') != selection(config):
@@ -177,7 +177,7 @@ def report(store, slug, config=None):
     result = store.get_state(slug + ':result', {})
     manual = []
     if result.get('selection') == selection(config) and result.get('format_signature') == inv.get('format_signature'):
-        manual.extend(item for item in result.get('manual', []) if item['title'] in current)
+        manual.extend(item for item in [*result.get('manual', []), *result.get('temporary', [])] if item['title'] in current)
     excluded = [dict(title=title, reason='На странице запрещена работа бота', categories=[])
                 for title in done if checked[title]['outcome'] == 'bot-excluded']
     return dict(problems=len(manual), manual=manual, skipped=0, skipped_articles=[], nuances=0,
@@ -188,3 +188,8 @@ def report(store, slug, config=None):
                 after_run=result.get('at'), monitor_error=store.get_state(slug + ':monitor_error'),
                 formats=formats,
                 backend=inv.get('backend'), limited=False)
+
+
+def report(store, slug, config=None):
+    from ..temporary import split_report
+    return split_report(_report(store, slug, config))

@@ -1792,6 +1792,8 @@ select {
 .metric-link > span { flex: none; }
 .metric-link.manual-count { border-color: #5a4727; background: var(--amber-pale); color: var(--amber); }
 .metric-link.zero-count { color: var(--muted); }
+.metric-link.temporary-count { color: #cfbce9; border-color: #59476d; background: rgba(177, 142, 215, .12); }
+.metric-link.temporary-count:hover { color: #e3d6f5; border-color: #9275af; background: rgba(177, 142, 215, .2); }
 .action-buttons { grid-area: buttons; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
 .action-buttons .task-controls { gap: 4px; flex-wrap: nowrap; }
 .icon-button { padding: 6px; min-width: 32px; min-height: 32px; border-radius: 5px; }

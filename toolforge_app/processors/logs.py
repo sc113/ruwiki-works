@@ -3,6 +3,7 @@ import copy
 
 from ..run_statistics import public_summary
 from ..wiki import AUTH_ERRORS, error_message
+from .temporary import CODES as TEMPORARY_CODES, LABELS as TEMPORARY_LABELS
 
 START_CODES = {'article', 'page'}
 RESULTS = {
@@ -15,6 +16,7 @@ RESULTS = {
     'bot_excluded': ('warning', 'Пропущено'), 'table_excluded': ('warning', 'Пропущено'),
     'deferred': ('warning', 'Отложено после новой правки'),
     'error': ('error', 'Не обработано'),
+    'temporary_skip': ('neutral', 'Временный пропуск'),
 }
 
 
@@ -44,6 +46,9 @@ def public_run(run):
         if code not in RESULTS:
             continue
         tone, message = RESULTS[code]
+        if code == 'temporary_skip' or code == 'error' and event.get('error') in TEMPORARY_CODES:
+            code, tone = 'temporary_skip', 'neutral'
+            message = 'Временный пропуск · ' + TEMPORARY_LABELS.get(event.get('error'), 'Проверим снова при следующем запуске')
         if code == 'error':
             message = error_message(event.get('error'), message)
         projected = dict(at=event['at'], code=code, title=title, message=message, tone=tone)

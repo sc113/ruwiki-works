@@ -9,6 +9,7 @@ from ...schedules import next_daily_time, search_interval
 from ...wiki import RUN_ERRORS, WikiClient, WikiError, require_bot_permission
 from ...run_statistics import report_changes, report_snapshot
 from ..daily_worker import DailyWorker, Controlled
+from ..temporary import CODES as TEMPORARY_CODES, LABELS as TEMPORARY_LABELS
 from . import TASK_SLUGS
 from .config import get_config
 from .inventory import Catalogue, inventory_signature, refresh_inventory, report, signature
@@ -75,7 +76,7 @@ class SectionWorker(DailyWorker):
                 if {normalize(name) for name in source['aliases']} & {normalize(name) for name in replacement['aliases']}:
                     raise WikiError('template-overlap')
                 ignored = [catalogue.aliases(name) for name in config['ignored_templates']]
-            notes, skipped = {}, {}
+            notes, skipped, temporary = {}, {}, {}
             def remember(title, outcome, reason=''):
                 # Dry-run proposals and reads must not suppress a later real execution.
                 if not dry_run:
@@ -125,6 +126,12 @@ class SectionWorker(DailyWorker):
                     if not dry_run:
                         remember(title, 'conflicting-markers' if issues else 'edited', notes[title]['reason'] if issues else '')
                 except WikiError as exc:
+                    if exc.code in TEMPORARY_CODES:
+                        temporary[title] = dict(title=title, outcome=exc.code, reason=TEMPORARY_LABELS[exc.code])
+                        summary['skipped'] += 1
+                        summary['temporary_skipped'] = summary.get('temporary_skipped', 0) + 1
+                        self.event('temporary_skip', TEMPORARY_LABELS[exc.code], title=title, error=exc.code)
+                        continue  # Do not put a temporary obstacle in the persistent checked ledger.
                     if exc.code in RUN_ERRORS:
                         self.event('error', 'Не удалось обработать страницу', title=title, error=exc.code)
                         raise
@@ -145,7 +152,8 @@ class SectionWorker(DailyWorker):
                 summary['errors'] += 1
                 self.event('error', LABELS['inventory-limited'], error='inventory-limited')
             self.store.set_state(self.slug + ':result', dict(signature=signature(config), at=time.time(),
-                manual=list(notes.values()), skipped=list(skipped.values()), run_id=self.run_id, dry_run=dry_run))
+                manual=list(notes.values()), skipped=list(skipped.values()), temporary=list(temporary.values()),
+                run_id=self.run_id, dry_run=dry_run))
             result_report = report(self.store, self.slug, config)
             failed = bool(summary['errors'])
             self.store.set_state(self.slug + ':worker_error', None)

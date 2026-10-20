@@ -28,7 +28,7 @@ def refresh_inventory(wiki, store, slug, now=None, *, config=None):
     return result
 
 
-def report(store, slug, config=None):
+def _report(store, slug, config=None):
     config = config or get_config(store, slug)
     inventory = store.get_state(slug + ':inventory')
     if inventory and inventory['sources'] != config['target_categories']:
@@ -42,12 +42,12 @@ def report(store, slug, config=None):
     entries = {title: dict(item) for title, item in checked.items()
                if title in current and (item['reason'] or item['outcome'] == 'unchanged')}
     if valid:
-        entries.update({item['title']: item for field in ('manual', 'skipped') for item in result.get(field, [])
+        entries.update({item['title']: item for field in ('manual', 'skipped', 'temporary') for item in result.get(field, [])
                         if item['title'] in current})
     manual, skipped = [], []
     for title, item in sorted(entries.items()):
         skip = is_skipped(item)
-        row = dict(title=title, reason=skip_reason(item) if skip else item['reason'], categories=current[title],
+        row = dict(title=title, outcome=item.get('outcome'), reason=skip_reason(item) if skip else item['reason'], categories=current[title],
                    verified_at=item.get('checked_at') or result.get('at'), retry_queued=title in retries)
         (skipped if skip else manual).append(row)
     imported = store.get_state(slug + ':legacy_import', {})
@@ -58,3 +58,8 @@ def report(store, slug, config=None):
                 sources=config['target_categories'], categories=inventory['categories'] if inventory else [], manual=manual,
                 pending_articles=[dict(title=title, categories=categories) for title, categories in sorted(pending.items())],
                 after_run=result.get('at') if valid else imported.get('at'), monitor_error=store.get_state(slug + ':monitor_error'))
+
+
+def report(store, slug, config=None):
+    from ..temporary import split_report
+    return split_report(_report(store, slug, config))

@@ -83,7 +83,7 @@ def refresh_inventory(wiki, store, slug, now=None, *, config=None, force=True):
     return result
 
 
-def report(store, slug, config=None):
+def _report(store, slug, config=None):
     config = config or get_config(store, slug)
     inventory = store.get_state(slug + ':inventory')
     if inventory and inventory.get('selection') != inventory_signature(config):
@@ -96,10 +96,10 @@ def report(store, slug, config=None):
     valid = result.get('signature') == signature(config)
     entries = {title: dict(item) for title, item in checked.items() if title in current and item['outcome'] != 'edited'}
     if valid:
-        entries.update({item['title']: item for field in ('manual', 'skipped') for item in result.get(field, []) if item['title'] in current})
+        entries.update({item['title']: item for field in ('manual', 'skipped', 'temporary') for item in result.get(field, []) if item['title'] in current})
     manual, skipped = [], []
     for title, item in sorted(entries.items()):
-        row = dict(title=title, reason=item.get('reason') or 'Замена не требуется', categories=current[title],
+        row = dict(title=title, outcome=item.get('outcome'), reason=item.get('reason') or 'Замена не требуется', categories=current[title],
                    verified_at=item.get('checked_at') or result.get('at'), retry_queued=title in retries)
         (manual if item['outcome'] in {'conflicting-markers', 'error'} else skipped).append(row)
     imported = store.get_state(slug + ':legacy_import', {})
@@ -114,3 +114,8 @@ def report(store, slug, config=None):
                 monitor_error=store.get_state(slug + ':monitor_error'), aliases=alias_readouts(store, config),
                 limited=inventory.get('limited', False) if inventory else False,
                 cache_origin=inventory.get('origin') if inventory else None)
+
+
+def report(store, slug, config=None):
+    from ..temporary import split_report
+    return split_report(_report(store, slug, config))

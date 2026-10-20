@@ -42,6 +42,7 @@ class History:
         self.wiki, self.base, self.config, self.event = wiki, base, config, event
         self.index = None
         self.cache = OrderedDict()
+        self.current_headings = {str(h.title).strip() for h in mwparserfromhell.parse(base.text).filter_headings()}
 
     def records(self):
         if self.index is None:
@@ -79,8 +80,16 @@ class History:
                             if str(param.name).strip().isdigit() and value in params:
                                 matches.append((value, heading))
                                 break  # Synonyms in one RQ are one occurrence.
-                if section is not None and len({heading for _, heading in matches}) > 1:
-                    raise WikiError("ambiguous-section-history")
+                if section is not None:
+                    exact = [match for match in matches if match[1] == section]
+                    # A similarly named, still-existing sibling is not an old
+                    # name of this section (e.g. filmography/discography).
+                    matches = exact or [match for match in matches if match[1] not in self.current_headings]
+                    if len({heading for _, heading in matches}) > 1:
+                        self.event('history_ambiguity', 'Не удалось сопоставить раздел с исторической версией',
+                                   section=section, candidates=sorted({heading for _, heading in matches}),
+                                   revision=self.records()[position]['id'])
+                        raise WikiError("ambiguous-section-history")
                 # Occurrences in one section share its history search, including
                 # redirects. The transform leaves existing dates untouched.
                 memo[position] = matches[0] if matches else None

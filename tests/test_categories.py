@@ -1,7 +1,7 @@
 import json
 import time
 from datetime import datetime
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -235,7 +235,8 @@ def test_weekly_and_month_end_schedule_are_independent_and_editable(settings, st
     assert {job['kind'] for job in jobs} == {'weekly', 'month_end'}
     dates = {job['kind']: datetime.fromtimestamp(job['due_at'], settings.zone).strftime('%Y-%m-%d %H:%M') for job in jobs}
     assert dates == {'weekly': '2026-10-12 05:00', 'month_end': '2026-10-31 05:00'}
-    save_schedule(settings, store, FORMAT, dict(run_time='06:00', weekday='2', month_end_time='07:00', search_minutes='360'), 'admin')
+    with patch('toolforge_app.storage.time.time', return_value=now):
+        save_schedule(settings, store, FORMAT, dict(run_time='06:00', weekday='2', month_end_time='07:00', search_minutes='360'), 'admin')
     assert get_schedule(settings, store, FORMAT)['weekday'] == 2
     assert not store.queue(FORMAT)
     assert next_weekly_time('05:00', 0, datetime(2026, 10, 12, 5, tzinfo=settings.zone).timestamp()) == datetime(2026, 10, 19, 5, tzinfo=settings.zone).timestamp()
@@ -344,3 +345,18 @@ def test_retired_resume_toggle_cannot_make_weekly_pass_recheck_all(settings, sto
     category_wiki.reads.clear()
     worker.execute(queue(store, FORMAT, 'weekly'))
     assert not category_wiki.reads and report(store, FORMAT)['to_process'] == 0
+
+
+def test_busy_category_is_temporary_and_is_not_marked_checked(settings, store, category_wiki):
+    settings.wiki_write = True
+    category_wiki.error = 'page-in-use'
+    worker = CategoryWorker(settings, store, FORMAT, category_wiki)
+    worker.execute(queue(store, FORMAT))
+    result = report(store, FORMAT)
+    run = store.list_runs(processor=FORMAT)[0]
+    assert run['status'] == 'success' and json.loads(run['summary'])['errors'] == 0
+    assert result['problems'] == 0 and result['temporary'] == 1 and result['to_process'] == 0
+    assert not store.checked_articles(FORMAT)
+    category_wiki.error = None
+    worker.execute(queue(store, FORMAT))
+    assert category_wiki.edits and report(store, FORMAT)['temporary'] == 0

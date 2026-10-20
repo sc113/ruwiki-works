@@ -12,13 +12,14 @@
     <a class="{{ 'active' if active == 'pending' }}" href="{{ url_for('processor', slug=module.slug, task=task.slug, view='pending') }}#reports" {% if active == 'pending' %}aria-current="page"{% endif %}>К обработке <span>{{ report.to_process if report.to_process is not none else '—' }}</span></a>
     <a class="{{ 'active' if active == 'problems' }}" href="{{ url_for('processor', slug=module.slug, task=task.slug, view='problems') }}#reports" {% if active == 'problems' %}aria-current="page"{% endif %}>Проблемы <span>{{ report.problems }}</span></a>
     {% if module.slug in ['translations', 'sections'] %}<a class="{{ 'active' if active == 'skipped' }}" href="{{ url_for('processor', slug=module.slug, task=task.slug, view='skipped') }}#reports" {% if active == 'skipped' %}aria-current="page"{% endif %}>Пропущено <span>{{ report.skipped }}</span></a>{% endif %}
+    {% if report.temporary %}<a class="{{ 'active' if active == 'temporary' }}" href="{{ url_for('processor', slug=module.slug, task=task.slug, view='temporary') }}#reports" {% if active == 'temporary' %}aria-current="page"{% endif %}>Временные пропуски <span>{{ report.temporary }}</span></a>{% endif %}
     <a class="{{ 'active' if active == 'logs' }}" href="{{ url_for('processor', slug=module.slug, task=task.slug, view='logs') }}#reports" {% if active == 'logs' %}aria-current="page"{% endif %}>{{ icon('history') }}Лог</a>
   </nav></div>
   {% if module.slug == 'sections' and report.cache_origin == 'legacy' %}<p class="report-notice">Список из локального кеша · {{ report.latest_check|localtime }}. Следующая проверка обновит его по Википедии.</p>{% endif %}
   {% if report.limited %}<p class="report-notice">Список ограничен лимитом в параметрах. Счётчики охватывают только полученные статьи.</p>{% endif %}
   {% if active == 'logs' %}{% include 'history.html' %}
   {% else %}
-    {% if module.slug == 'categories' %}{% include 'category_results.html' %}{% else %}
+    {% if active == 'temporary' %}{% include 'temporary_items.html' %}{% elif module.slug == 'categories' %}{% include 'category_results.html' %}{% else %}
     {% if report.monitor_error %}<div class="notice">{{ 'Список ограничен лимитом в параметрах.' if report.monitor_error.code == 'inventory-limited' else 'Не удалось обновить список статей: ' ~ report.monitor_error.code ~ '. Следующая попытка — по расписанию поиска.' }}</div>{% endif %}
     <div class="report-content-heading"><h3>{{ 'Новые статьи к обработке' if active == 'pending' and module.slug in ['translations', 'sections'] else 'Статьи к обработке' if active == 'pending' else 'Пропущенные статьи' if active == 'skipped' else 'Проблемы и оповещения' }}</h3>{% if active == 'problems' and report.problems %}<span class="badge error">Исправить {{ report.problems }}</span>{% endif %}</div>
     {% if active == 'pending' %}

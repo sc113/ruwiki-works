@@ -215,8 +215,8 @@ def test_in_use_page_is_not_saved_or_permanently_marked_as_skipped(settings, sto
     worker = SectionWorker(settings, store, FORWARD, wiki)
     worker.execute(queue(store))
     assert not wiki.edits and not store.checked_articles(FORWARD)
-    assert store.list_runs(processor=FORWARD)[0]['status'] == 'failed'
-    assert report(store, FORWARD)['to_process'] == 1
+    assert store.list_runs(processor=FORWARD)[0]['status'] == 'success'
+    assert report(store, FORWARD)['to_process'] == 0 and report(store, FORWARD)['temporary'] == 1
     base = wiki.data['Пример']
     wiki.data['Пример'] = Revision(base.title, base.revision + 1, time.time(), base.text.replace('{{Редактирую}}', ''))
     worker.execute(queue(store))

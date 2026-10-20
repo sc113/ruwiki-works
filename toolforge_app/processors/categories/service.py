@@ -11,6 +11,7 @@ from . import TASK_SLUGS
 from .config import get_config
 from .formats import expected_category, refresh_formats
 from .inventory import refresh_inventory, refresh_snapshot, report, selection, is_checked, snapshot_key
+from ..temporary import CODES as TEMPORARY_CODES, LABELS as TEMPORARY_LABELS
 
 LABELS = {
     'category-formats-invalid': 'Таблица форматов неполная или некорректная; правки не выполнялись',
@@ -124,6 +125,12 @@ class CategoryWorker(DailyWorker):
                         if not dry_run and not creates:
                             self.remember(title, 'edited', revision, expected['signature'])
                     except WikiError as exc:
+                        if exc.code in TEMPORARY_CODES:
+                            notes[title] = dict(title=title, outcome=exc.code, reason=TEMPORARY_LABELS[exc.code], categories=[])
+                            summary['skipped'] += 1
+                            summary['temporary_skipped'] = summary.get('temporary_skipped', 0) + 1
+                            self.event('temporary_skip', TEMPORARY_LABELS[exc.code], title=title, error=exc.code)
+                            continue
                         if exc.code in RUN_ERRORS:
                             self.event('error', 'Не удалось обработать категорию', title=title, error=exc.code)
                             raise
@@ -142,7 +149,10 @@ class CategoryWorker(DailyWorker):
             after = refresh_inventory(self.wiki, self.store, self.slug, config, formats=formats, force=True)
             summary['remaining'] = after['total']
             self.store.set_state(self.slug + ':result', dict(at=time.time(), selection=selection(config),
-                format_signature=formats['signature'], manual=list(notes.values()), run_id=self.run_id, dry_run=dry_run))
+                format_signature=formats['signature'],
+                manual=[item for item in notes.values() if item.get('outcome') not in TEMPORARY_CODES],
+                temporary=[item for item in notes.values() if item.get('outcome') in TEMPORARY_CODES],
+                run_id=self.run_id, dry_run=dry_run))
             result_report = report(self.store, self.slug, config)
             self.store.set_state(self.slug + ':worker_error', None)
         except Controlled as exc:

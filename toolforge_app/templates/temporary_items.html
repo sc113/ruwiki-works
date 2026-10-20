@@ -1,0 +1,4 @@
+<div class="report-content-heading"><h3>Временные пропуски</h3></div>
+{% if items %}<ul class="pending-articles temporary-articles" aria-label="Временные пропуски">
+{% for item in items %}<li><a href="{{ wiki_url(item.title) }}" target="_blank" rel="noopener">{{ item.title }} ↗</a><span class="article-category">{{ item.reason }}</span></li>{% endfor %}
+</ul>{% else %}<div class="empty-message">Временных пропусков нет</div>{% endif %}

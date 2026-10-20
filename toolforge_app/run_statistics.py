@@ -3,7 +3,7 @@ from collections import Counter
 
 
 SUMMARY_FIELDS = (
-    "checked", "changed", "proposed", "skipped", "previously_checked", "errors",
+    "checked", "changed", "proposed", "skipped", "temporary_skipped", "previously_checked", "errors",
     "remaining", "problems", "nuances", "deferred", "report_problems", "report_skipped",
     "problems_added", "problems_resolved", "skipped_added", "skipped_resolved",
 )

@@ -16,6 +16,7 @@ from .inventory import refresh_inventory, report, signature
 from .transform import normalize, parse_creation_comment, parse_talk, update_templates
 
 from .outcomes import LABELS, SOURCE_NOTICES, is_skipped
+from ..temporary import CODES as TEMPORARY_CODES, LABELS as TEMPORARY_LABELS
 
 
 
@@ -137,6 +138,12 @@ class TranslationWorker(DailyWorker):
                     if not dry_run:
                         remember(title, 'edited')
                 except WikiError as exc:
+                    if exc.code in TEMPORARY_CODES:
+                        notes[title], outcomes[title] = TEMPORARY_LABELS[exc.code], exc.code
+                        summary['skipped'] += 1
+                        summary['temporary_skipped'] = summary.get('temporary_skipped', 0) + 1
+                        self.event('temporary_skip', TEMPORARY_LABELS[exc.code], title=title, error=exc.code)
+                        continue  # Leave the article eligible for the next daily pass.
                     if exc.code in RUN_ERRORS:
                         self.event('error', 'Не удалось обработать страницу', title=title, error=exc.code)
                         raise
@@ -156,8 +163,9 @@ class TranslationWorker(DailyWorker):
             rows = [dict(title=title, reason=reason, outcome=outcomes[title]) for title, reason in sorted(notes.items())
                     if title in after['articles']]
             self.store.set_state(self.slug + ':result', dict(signature=signature(config), at=time.time(),
-                                 manual=[item for item in rows if not is_skipped(item)],
-                                 skipped=[item for item in rows if is_skipped(item)], run_id=self.run_id, dry_run=dry_run))
+                                 manual=[item for item in rows if item['outcome'] not in TEMPORARY_CODES and not is_skipped(item)],
+                                 skipped=[item for item in rows if is_skipped(item)],
+                                 temporary=[item for item in rows if item['outcome'] in TEMPORARY_CODES], run_id=self.run_id, dry_run=dry_run))
             self.event('remaining', f"Осталось статей в категориях: {after['total']}")
             result_report = report(self.store, self.slug, config)
             failed = bool(summary['errors'])

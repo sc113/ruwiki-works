@@ -231,14 +231,15 @@ def test_admin_controls_interrupt_before_article_edit(settings, store, action, s
     assert not wiki.edits and store.list_runs(processor=CATS)[0]['status'] == status
 
 
-def test_talk_change_prevents_save_and_failure_waits_until_next_daily_run(settings, store):
+def test_talk_change_prevents_save_and_temporary_skip_waits_until_next_daily_run(settings, store):
     settings.wiki_write = True
     wiki = TranslationWiki()
     wiki.revisions = lambda titles: [Revision(titles[0], 21, time.time(), 'Новый текст')]
     worker = TranslationWorker(settings, store, TALK, wiki)
     worker.execute(job(store, TALK))
     assert not wiki.edits and not store.queue(TALK)
-    assert store.list_runs(processor=TALK)[0]['status'] == 'failed'
+    assert store.list_runs(processor=TALK)[0]['status'] == 'success'
+    assert report(store, TALK)['temporary'] == 1 and not store.checked_articles(TALK)
     now = datetime(2026, 10, 6, 3, 59, tzinfo=settings.zone).timestamp()
     worker.schedule(now)
     assert store.queue(TALK)[0]['due_at'] == now + 60

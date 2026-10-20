@@ -81,7 +81,7 @@ ERROR_LABELS = {
     "revision-limit": "Превышен установленный лимит ревизий",
     "hidden-history": "Часть истории скрыта; дата требует ручной проверки",
     "incomplete-history": "Не получена полная история статьи",
-    "ambiguous-section-history": "Неоднозначная история раздела",
+    "ambiguous-section-history": "В истории найдены несколько похожих разделов с этим шаблоном; не удалось однозначно определить дату его установки. Проверьте дату добавления шаблона в нужный раздел и укажите параметр «дата» вручную",
     "ambiguous-template-occurrence": "Несколько одинаковых шаблонов в одном разделе; уточните даты установки вручную",
     "category-templates-missing": "В описании категории не найден перечень шаблонов",
     "template-missing": "Целевой шаблон не существует",
@@ -93,7 +93,7 @@ ERROR_LABELS = {
 }
 
 
-def report(store, slug, config=None):
+def _report(store, slug, config=None):
     config = config or get_config(store, slug)
     inventory = store.get_state(slug + ":inventory")
     source = source_category(slug, config)
@@ -104,7 +104,7 @@ def report(store, slug, config=None):
     excluded = [dict(item, categories=current[item['title']]) for item in result.get('excluded', [])
                 if result.get('source') == source and item['title'] in current]
     excluded_titles = {item['title'] for item in excluded}
-    manual = [dict(item, categories=current[item["title"]]) for item in result.get("manual", [])
+    manual = [dict(item, categories=current[item["title"]]) for item in [*result.get("manual", []), *result.get("temporary", [])]
               if result.get("source") == source and item["title"] in current and item['title'] not in excluded_titles]
     return {"problems": len(manual), "nuances": 0, "pages": inventory["total"] if inventory else 0,
             "to_process": len(current) - len(excluded) if inventory else None, "latest_check": inventory["checked_at"] if inventory else None,
@@ -114,3 +114,8 @@ def report(store, slug, config=None):
                                  if title not in excluded_titles],
             "after_run": result.get("at") if result.get("source") == source else None,
             "monitor_error": store.get_state(slug + ":monitor_error")}
+
+
+def report(store, slug, config=None):
+    from ..temporary import split_report
+    return split_report(_report(store, slug, config))

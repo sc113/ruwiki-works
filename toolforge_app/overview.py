@@ -48,7 +48,7 @@ def build_overview(settings, store, now=None):
         progress = None
         if running:
             events = json.loads(latest["events"])
-            terminal = {"edited", "would_edit", "unchanged", "missing", "bot_excluded"}
+            terminal = {"edited", "would_edit", "unchanged", "missing", "bot_excluded", "temporary_skip"}
             progress = dict(checked=sum(event["code"] in terminal for event in events),
                             title=next((event["title"] for event in reversed(events) if event.get("title")), ""),
                             message=events[-1]["message"] if events else "Начало обработки")

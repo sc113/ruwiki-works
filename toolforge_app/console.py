@@ -24,7 +24,7 @@ def count_label(value, one, few, many):
 def run_metrics(run, *, compact=False):
     summary = public_summary(run["summary"])
     if run["status"] == "running":
-        terminal = {"edited", "would_edit", "unchanged", "missing", "bot_excluded"}
+        terminal = {"edited", "would_edit", "unchanged", "missing", "bot_excluded", "temporary_skip"}
         summary.setdefault("checked", sum(event["code"] in terminal for event in run["events"]))
         summary.setdefault("changed", sum(event["code"] == "edited" for event in run["events"]))
         summary.setdefault("proposed", sum(event["code"] == "would_edit" for event in run["events"]))
@@ -44,8 +44,10 @@ def run_metrics(run, *, compact=False):
         metrics.append(dict(label=label, value=value,
                             added=summary.get("problems_added"), resolved=summary.get("problems_resolved"), tone="warning"))
     if "skipped" in summary or "skipped_added" in summary:
-        metrics.append(dict(label="пропущено", value=summary.get("skipped", 0),
+        metrics.append(dict(label="пропущено", value=max(0, summary.get("skipped", 0) - summary.get("temporary_skipped", 0)),
                             added=summary.get("skipped_added"), tone="muted"))
+    if summary.get('temporary_skipped'):
+        metrics.append(dict(label='временно пропущено', value=summary['temporary_skipped'], tone='muted'))
     if summary.get("previously_checked"):
         metrics.append(dict(label="ранее проверено", value=summary["previously_checked"], tone="muted"))
     if summary.get("errors"):
