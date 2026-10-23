@@ -35,6 +35,7 @@ from .wiki import WikiError, error_message
 from .runtime import execution_settings, service_enabled, writes_enabled
 from .run_status import STATUS_LABELS
 from .statistics import statistics
+from .recovery import RecoveryError, restart_available, restart_process
 
 KIND_LABELS = {"page": "После правки", "full": "Ручной запуск", "month_end": "Конец месяца",
                "import": "Локальный снимок", "bootstrap": "Первичная синхронизация", "daily": "По расписанию",
@@ -42,7 +43,18 @@ KIND_LABELS = {"page": "После правки", "full": "Ручной запу
 
 
 def create_app(settings=None, store=None, *, admin_preview=False):
-    settings = settings or Settings.from_env()
+    try:
+        settings = settings or Settings.from_env()
+    except (RecoveryError, OSError):
+        unavailable = Flask(__name__)
+        @unavailable.route('/', defaults={'path': ''}, methods=['GET', 'POST'])
+        @unavailable.route('/<path:path>', methods=['GET', 'POST'])
+        def unavailable_page(path):
+            return Response('Сайт временно недоступен: сервер не загрузил настройки подключения. '
+                'OAuth и данные не нужно создавать заново. Требуется восстановление конфигурации Toolforge.',
+                status=503, content_type='text/plain; charset=utf-8',
+                headers={'Cache-Control': 'no-store', 'Retry-After': '60'})
+        return unavailable
     if admin_preview and (settings.wiki_write or urlsplit(settings.public_url).scheme != "http"
                           or urlsplit(settings.public_url).hostname not in {"127.0.0.1", "localhost", "::1"}):
         raise ValueError("Admin preview requires a local HTTP URL and disabled wiki writes")
@@ -223,6 +235,9 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             is_admin=preview or authenticated_admin(),
             preview_enabled=preview_enabled(), preview_admin=preview,
             oauth_enabled=bool(settings.oauth_key and settings.oauth_secret),
+            process_restart_available=restart_available() if full_logs() else False,
+            process_restart_receipt=store.get_state('process:restart', {}) if full_logs() else {},
+            configuration_source=getattr(settings, 'configuration_source', 'environment'),
             status_labels=STATUS_LABELS, kind_labels=KIND_LABELS, wiki_url=wiki_url,
             system_health=health(),
             worker_online=time.time() - heartbeat < max(300, settings.poll_seconds * 4),
@@ -318,6 +333,47 @@ def create_app(settings=None, store=None, *, admin_preview=False):
         return render_template('admin_status.html', overview=build_overview(settings, store),
             database_kind=store.engine.dialect.name, write_ceiling=settings.wiki_write,
             writes_allowed=writes_enabled(settings, store))
+
+    @app.route('/admin/processes/<name>/restart', methods=['POST'])
+    @admin_required
+    def process_restart(name):
+        if name not in {'web', 'executor', 'monitor'}:
+            abort(404)
+        if not restart_available():
+            abort(409, 'Управление процессами Toolforge ещё не настроено.')
+        with store.worker_lease(processor='process-restart') as operation:
+            if not operation:
+                abort(409, 'Другая команда перезапуска уже выполняется.')
+            previous = store.get_state('process:restart', {})
+            if time.time() - previous.get('at', 0) < 90:
+                abort(409, 'Предыдущая команда ещё применяется. Подождите 90 секунд и обновите состояние.')
+            # These are infrastructure restarts, never task restarts or queue resets.
+            from contextlib import ExitStack
+            with ExitStack() as stack:
+                if name == 'executor':
+                    for key in ('dispatcher', 'execution'):
+                        if not stack.enter_context(store.worker_lease(processor=key)):
+                            abort(409, 'Исполнитель занят. Дождитесь завершения текущей обработки и повторите перезапуск.')
+                receipt = dict(component=name, at=time.time(), by=session['username'], status='requested')
+                store.set_state('process:restart', receipt)
+                try:
+                    receipt['request_id'] = restart_process(name)
+                    receipt['status'] = 'accepted'
+                except RecoveryError as error:
+                    receipt['status'] = 'unconfirmed'
+                    store.set_state('process:restart', receipt)
+                    if name == 'executor':
+                        # Keep a short safety window if a response was lost during rollout.
+                        from sqlalchemy import update
+                        from .storage import leases
+                        with store.engine.begin() as connection:
+                            connection.execute(update(leases).where(leases.c.key.in_(('dispatcher', 'execution')))
+                                .values(owner=secrets.token_hex(16), expires_at=time.time() + 120))
+                    flash(str(error))
+                else:
+                    store.set_state('process:restart', receipt)
+                    flash('Перезапуск запрошен. Дождитесь свежего сигнала процесса; очередь и настройки сохранены.')
+        return redirect(url_for('connections_page') + '#processes')
 
     def check_connection(name, current):
         # One shared cooldown across web instances prevents repeated login attempts.
@@ -833,7 +889,7 @@ def create_app(settings=None, store=None, *, admin_preview=False):
             flash(CONNECTION_ERRORS['credentials-unreadable'])
             return redirect(url_for('index'))
         if not current.oauth_key or not current.oauth_secret:
-            flash("Вход через Википедию будет доступен после подключения OAuth на Toolforge.")
+            flash("Сервер не загрузил настройки OAuth. Если вход раньше работал, повторно создавать приложение не нужно: восстановите конфигурацию Toolforge.")
             return redirect(url_for("index"))
         store.prune_oauth_requests(time.time())
         consumer = mwoauth.ConsumerToken(current.oauth_key, current.oauth_secret)

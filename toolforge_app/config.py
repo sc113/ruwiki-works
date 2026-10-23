@@ -6,6 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
+from .recovery import RecoveryError, private_configuration, tool_directory
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -40,12 +41,19 @@ class Settings:
     @classmethod
     def from_env(cls):
         load_dotenv(ROOT / ".env")
+        backup = private_configuration()
+        environment = {**(backup['environment'] if backup else {}), **os.environ}
+        if tool_directory() is not None and not all(environment.get('TOOLFORGE_' + key)
+                for key in ('DATABASE_URL', 'PUBLIC_URL', 'SECRET_KEY', 'ADMIN_USERNAME')):
+            raise RecoveryError('Server configuration is unavailable; refusing an empty local database')
         values = {}
         for name, field in cls.__dataclass_fields__.items():
-            raw = os.environ.get("TOOLFORGE_" + name.upper())
+            raw = environment.get("TOOLFORGE_" + name.upper())
             if raw is not None:
                 values[name] = raw.lower() in {"true", "1", "yes"} if field.type is bool else int(raw) if field.type is int else raw
         result = cls(**values)
+        result.configuration_source = ('recovery' if backup and any(
+            key not in os.environ for key in backup['environment']) else 'environment')
         if result.quiet_minutes < 1 or result.poll_seconds < 1:
             raise ValueError("Intervals must be positive")
         if not 1 <= result.log_retention_days <= 3650:

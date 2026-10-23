@@ -4,6 +4,7 @@
 {% block content %}
 <div class="page-heading"><div class="title-row"><span class="page-task-icon">{{ icon('connections') }}</span><h1>Настройки профиля</h1></div><a class="button secondary" href="{{ url_for('work_journal') }}">{{ icon('console') }}Журнал работ</a></div>
 {% if connection_error %}<p class="notice" role="alert">{{ connection_error }}</p>{% endif %}
+<p class="connection-note">{% if configuration_source == 'recovery' %}Настройки восстановлены из защищённой резервной копии. OAuth и доступ admin сохранены.{% elif process_restart_available %}Резервная конфигурация подключена: при сбое загрузки окружения вход и база восстановятся автоматически.{% endif %}</p>
 <div id="admin-system-status" data-refresh-url="{{ url_for('admin_status_fragment') }}">{% include 'admin_status.html' %}</div>
 <section class="connection-panel" id="bot" aria-labelledby="bot-heading">
   <div class="connection-heading"><div><h2 id="bot-heading">Учётная запись бота</h2><p>Авторизация фоновых задач в Википедии</p></div><span class="connection-state connection-{{ connections.bot.status }}">{{ 'Подключён' if connections.bot.status == 'success' else 'Ошибка проверки' if connections.bot.status == 'error' else 'Ожидает проверки' if connections.bot.configured else 'Не настроено' }}</span></div>
@@ -37,7 +38,7 @@
     </form></details>
   </div>
 </section>
-<p class="connection-note">Выключение исполнителя приостанавливает автоматическую обработку и сохраняет очередь; ручной запуск остаётся доступен. Новая команда выключения прерывает текущий проход. Сигнал связи продолжает поступать. Сайт и базу останавливают через Toolforge.</p>
+<p class="connection-note">Выключение исполнителя приостанавливает автоматическую обработку и сохраняет очередь; ручной запуск остаётся доступен. Новая команда выключения прерывает текущий проход. Сигнал связи продолжает поступать. Остановку сайта и базы выполняют через Toolforge.</p>
 <p class="connection-note">Сохранённые пароли и tokens не отображаются. Новые данные применяются без перезапуска. Проверки подключений не включают запись в Википедию.</p>
 <details class="connection-panel" id="storage">
   <summary class="connection-heading"><h2>Журналы и хранение</h2><span class="muted-value">{{ storage_usage.database_bytes|filesize if storage_usage.checked_at else 'Ожидает проверки' }}</span></summary>
